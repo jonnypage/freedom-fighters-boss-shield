@@ -1,13 +1,13 @@
 # Dual Button WLED Control System
 
-This project implements a two-button control system using two Raspberry Pis to control a WLED light controller. When both buttons (Enter keys) are pressed simultaneously, the lights turn off for 10 seconds and then automatically turn back on.
+This project implements a two-button control system using two Raspberry Pis to control a WLED light controller. When both buttons (Enter keys on Logitech K400 Plus keyboards) are pressed simultaneously, it triggers a shield-breaking effect with various visual stages.
 
 ## Setup Instructions
 
 ### Prerequisites
 - Two Raspberry Pis (primary and secondary)
 - Node.js installed on both Raspberry Pis
-- USB keyboards connected to both Raspberry Pis
+- Logitech K400 Plus keyboards connected to both Raspberry Pis
 - WLED controller set up and accessible on the network
 
 ### Installation
@@ -20,34 +20,53 @@ This project implements a two-button control system using two Raspberry Pis to c
 
 ### Configuration
 
-1. On the primary Pi (ff-primary):
-   - Verify the WLED_IP in `primary.js` matches your WLED controller's IP address
-   - Check the KEYBOARD_DEVICE path matches your USB keyboard (usually `/dev/input/event0`)
-   - Run the primary server:
-     ```bash
-     npm run start-primary
-     ```
+1. On the primary Pi:
+   - Verify the WLED_IP in `primary.js` matches your WLED controller's IP address (default: 192.168.8.212)
+   - The system will automatically detect the Logitech K400 Plus keyboard
+   - Configure systemd to auto-start the service on boot
 
-2. On the secondary Pi (ff-secondary):
-   - Verify the PRIMARY_PI_ADDRESS in `secondary.js` points to your primary Pi
-   - Check the KEYBOARD_DEVICE path matches your USB keyboard
-   - Run the secondary client:
-     ```bash
-     npm run start-secondary
-     ```
+2. On the secondary Pi:
+   - Verify the PRIMARY_PI_ADDRESS in `secondary.js` points to your primary Pi (default: ws://192.168.8.142:8080)
+   - The system will automatically detect the Logitech K400 Plus keyboard
+   - Configure systemd to auto-start the service on boot
 
 ### Network Setup
 - Ensure both Raspberry Pis are on the same network
-- Make sure the hostnames 'ff-primary' and 'ff-boss-wled' are properly configured in your network's DNS or in the Pis' /etc/hosts files
+- The primary Pi runs a WebSocket server on port 8080
+- The secondary Pi connects to the primary Pi as a WebSocket client
 
-## Usage
-1. Start the primary server on ff-primary
-2. Start the secondary client on ff-secondary
-3. Press the Enter keys on both keyboards simultaneously
-4. The lights will turn off for 10 seconds and then automatically turn back on
-5. Repeat as desired
+## Shield Effect Sequence
+When both Enter keys are pressed within 500ms of each other:
+
+1. Shield Breaking Effect:
+   - Initial full brightness
+   - 5 rapid flickers with random brightness and duration
+   - Final fade out sequence
+
+2. Shield Down Period:
+   - Total duration: 15 seconds
+   - Shield remains down for first 12 seconds (80% of total time)
+
+3. Shield Regeneration:
+   - Begins at 12 seconds (80% mark)
+   - Series of 12 pulses with increasing intensity
+   - Pulses speed up exponentially
+   - Final bright flash
+   - Returns to full power using preset 1
+
+## Error Handling
+- Automatic reconnection if WebSocket connection is lost
+- Automatic keyboard detection on startup
+- Button state timeout after 1 second to prevent stuck states
+- Shield automatically resets to full power if an error occurs
+- Process-level error handling to prevent crashes
+
+## Auto-Start Configuration
+Both Pis are configured to automatically start the application on boot using systemd/journalctl, ensuring the system recovers automatically from power issues or restarts.
 
 ## Troubleshooting
-- If the keyboard input isn't working, verify the correct keyboard device path
-- If the Pis can't connect, check network connectivity and hostname resolution
-- If WLED control isn't working, verify the WLED controller's IP address and network connectivity 
+- If the keyboard isn't detected, ensure you're using a Logitech K400 Plus keyboard
+- If the Pis can't connect, check network connectivity and verify the PRIMARY_PI_ADDRESS
+- If WLED control isn't working, verify the WLED controller's IP address and network connectivity
+- Check journalctl logs for any startup or runtime errors
+- Verify both services are running with `systemctl status` 

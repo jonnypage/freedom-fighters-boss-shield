@@ -1,0 +1,452 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Freedom Fighters: Boss Shield Control</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body {
+            background-color: #1a1a1a;
+            color: #ffffff;
+        }
+        .shield-status {
+            font-size: 2em;
+            padding: 20px;
+            border-radius: 10px;
+            margin: 20px 0;
+            text-align: center;
+            transition: all 0.3s ease;
+        }
+        .shield-on {
+            background-color: #dc3545;
+            animation: pulse 2s infinite;
+        }
+        .shield-broken {
+            background-color: #198754;
+        }
+        .shield-shattering {
+            background-color: #ffc107;
+            animation: shake 0.5s infinite;
+        }
+        .shield-regenerating {
+            background-color: #dc3545;
+            animation: glow 1s infinite;
+        }
+        .shield-boss-dead {
+            background-color: #6f42c1;
+            animation: fade 2s infinite;
+        }
+        .shield-off {
+            background-color: #343a40;
+        }
+        .control-button {
+            width: 200px;
+            height: 60px;
+            margin: 10px;
+            font-size: 1.2em;
+        }
+        @keyframes pulse {
+            0% {
+                box-shadow: 0 0 0 0 rgba(220, 53, 69, 0.7);
+            }
+            70% {
+                box-shadow: 0 0 0 10px rgba(220, 53, 69, 0);
+            }
+            100% {
+                box-shadow: 0 0 0 0 rgba(220, 53, 69, 0);
+            }
+        }
+        @keyframes shake {
+            0%, 100% { transform: translateX(0); }
+            25% { transform: translateX(-5px); }
+            75% { transform: translateX(5px); }
+        }
+        @keyframes glow {
+            0% { filter: brightness(1); }
+            50% { filter: brightness(1.3); }
+            100% { filter: brightness(1); }
+        }
+        @keyframes fade {
+            0% { opacity: 1; }
+            50% { opacity: 0.5; }
+            100% { opacity: 1; }
+        }
+        .button-status {
+            padding: 10px;
+            border-radius: 5px;
+            margin: 5px;
+            display: inline-block;
+        }
+        .pressed {
+            background-color: #198754;
+        }
+        .not-pressed {
+            background-color: #6c757d;
+        }
+        .countdown {
+            font-size: 1.5em;
+            color: #ffc107;
+            margin: 10px 0;
+            text-align: center;
+            visibility: hidden;
+            height: 2.5em;  /* Fixed height to maintain space */
+        }
+        .countdown.visible {
+            visibility: visible;
+        }
+        .boss-death-button {
+            width: 300px;
+            height: 80px;
+            margin-top: 30px;
+            font-size: 1.5em;
+            background-color: #8bb8e8;
+            border-color: #5c9ee3;
+            color: #1a365d;
+            font-weight: 600;
+        }
+        .boss-death-button:hover {
+            background-color: #5c9ee3;
+            border-color: #4a8cd1;
+            color: #1a365d;
+        }
+        .alert {
+            background-color: #2a2a2a;
+            border: 1px solid #3a3a3a;
+            color: #e0e0e0;
+        }
+        .alert-danger {
+            background-color: #2a2020;
+            border-color: #3a2525;
+            color: #ffb0b0;
+        }
+        .alert-info {
+            background-color: #202a2a;
+            border-color: #253a3a;
+            color: #b0e0e0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container mt-5">
+        <h1 class="text-center mb-4">Freedom Fighters: Boss Shield Control</h1>
+        
+        <div class="shield-status" id="shieldStatus">
+            Shield Status: Loading...
+        </div>
+
+        <div class="countdown" id="countdown">
+            Regeneration in: <span id="countdownTime">--:--</span>
+        </div>
+
+        <div class="text-center mb-4">
+            <div class="button-status" id="primaryStatus">
+                Primary Button: Unknown
+            </div>
+            <div class="button-status" id="secondaryStatus">
+                Secondary Button: Unknown
+            </div>
+        </div>
+
+        <div class="d-flex justify-content-center">
+            <button class="btn btn-danger control-button" id="triggerButton">
+                Trigger Shield Break
+            </button>
+            <button class="btn btn-success control-button" id="resetButton">
+                Reset System
+            </button>
+            <button class="btn btn-dark control-button" id="lightsOffButton">
+                Power Down Shield
+            </button>
+        </div>
+
+        <div class="d-flex justify-content-center">
+            <button class="btn btn-primary boss-death-button" id="bossDeathButton">
+                Boss Death Sequence
+            </button>
+        </div>
+
+        <div class="mt-4" id="statusMessages">
+        </div>
+    </div>
+
+    <script>
+        let updateTimer = null;
+        let countdownTimer = null;
+        const SHIELD_DOWN_TIME = 15000; // 15 seconds total
+        const REGEN_START_TIME = SHIELD_DOWN_TIME * 0.8; // Start regeneration at 80% (12 seconds)
+
+        function updateCountdown(startTime) {
+            const now = Date.now();
+            const elapsed = now - startTime;
+            const remainingBeforeRegen = REGEN_START_TIME - elapsed;
+            
+            if (remainingBeforeRegen <= 0) {
+                document.getElementById('countdown').classList.remove('visible');
+                if (countdownTimer) {
+                    clearInterval(countdownTimer);
+                    countdownTimer = null;
+                }
+                return;
+            }
+            
+            const seconds = Math.ceil(remainingBeforeRegen / 1000);
+            const formattedTime = `${seconds} seconds`;
+            document.getElementById('countdownTime').textContent = formattedTime;
+        }
+
+        async function updateStatus() {
+            try {
+                const response = await fetch('/api/status');
+                const data = await response.json();
+                
+                const shieldStatus = document.getElementById('shieldStatus');
+                let displayStatus = '';
+                
+                // Update shield status text and class
+                switch(data.shieldStatus) {
+                    case 'on':
+                        displayStatus = 'SHIELD ACTIVE';
+                        shieldStatus.className = 'shield-status shield-on';
+                        break;
+                    case 'shattering':
+                        displayStatus = 'SHIELD SHATTERING';
+                        shieldStatus.className = 'shield-status shield-shattering';
+                        break;
+                    case 'broken':
+                        displayStatus = 'SHIELD BROKEN';
+                        shieldStatus.className = 'shield-status shield-broken';
+                        break;
+                    case 'regenerating':
+                        displayStatus = 'SHIELD REGENERATING';
+                        shieldStatus.className = 'shield-status shield-regenerating';
+                        break;
+                    case 'boss-dead':
+                        displayStatus = 'BOSS DEFEATED';
+                        shieldStatus.className = 'shield-status shield-boss-dead';
+                        break;
+                    case 'off':
+                        displayStatus = 'SHIELD OFFLINE';
+                        shieldStatus.className = 'shield-status shield-off';
+                        break;
+                    default:
+                        displayStatus = 'SHIELD STATUS UNKNOWN';
+                        shieldStatus.className = 'shield-status';
+                }
+                
+                shieldStatus.textContent = displayStatus;
+
+                // Handle countdown visibility and updates
+                const countdownElement = document.getElementById('countdown');
+                if (data.shieldStatus === 'broken' && !countdownTimer) {
+                    countdownElement.classList.add('visible');
+                    const startTime = Date.now();
+                    updateCountdown(startTime);
+                    if (countdownTimer) clearInterval(countdownTimer);
+                    countdownTimer = setInterval(() => updateCountdown(startTime), 1000);
+                } else if (data.shieldStatus !== 'broken') {
+                    countdownElement.classList.remove('visible');
+                    if (countdownTimer) {
+                        clearInterval(countdownTimer);
+                        countdownTimer = null;
+                    }
+                }
+
+                // Update button states
+                const primaryStatus = document.getElementById('primaryStatus');
+                const secondaryStatus = document.getElementById('secondaryStatus');
+                
+                primaryStatus.textContent = `Primary Button: ${data.primaryButton.pressed ? 'Pressed' : 'Released'}`;
+                primaryStatus.className = `button-status ${data.primaryButton.pressed ? 'pressed' : 'not-pressed'}`;
+                
+                secondaryStatus.textContent = `Secondary Button: ${data.secondaryButton.pressed ? 'Pressed' : 'Released'}`;
+                secondaryStatus.className = `button-status ${data.secondaryButton.pressed ? 'pressed' : 'not-pressed'}`;
+            } catch (error) {
+                console.error('Error updating status:', error);
+                addStatusMessage('Error updating status', true);
+            }
+        }
+
+        function addStatusMessage(message, isError = false) {
+            const statusDiv = document.getElementById('statusMessages');
+            const messageElement = document.createElement('div');
+            messageElement.className = `alert ${isError ? 'alert-danger' : 'alert-info'} mt-2`;
+            messageElement.textContent = `${new Date().toLocaleTimeString()}: ${message}`;
+            statusDiv.insertBefore(messageElement, statusDiv.firstChild);
+
+            // Keep only the last 5 messages
+            while (statusDiv.children.length > 5) {
+                statusDiv.removeChild(statusDiv.lastChild);
+            }
+        }
+
+        document.getElementById('triggerButton').addEventListener('click', async () => {
+            try {
+                const button = document.getElementById('triggerButton');
+                button.disabled = true;
+                
+                const response = await fetch('/api/trigger', { method: 'POST' });
+                const data = await response.json();
+                
+                if (data.success) {
+                    // Update UI state to show shield is shattering
+                    const shieldStatus = document.getElementById('shieldStatus');
+                    shieldStatus.textContent = 'SHIELD SHATTERING';
+                    shieldStatus.className = 'shield-status shield-shattering';
+                    
+                    // Start countdown when shield breaks
+                    const countdownElement = document.getElementById('countdown');
+                    countdownElement.classList.add('visible');
+                    const startTime = Date.now();
+                    updateCountdown(startTime);
+                    if (countdownTimer) {
+                        clearInterval(countdownTimer);
+                    }
+                    countdownTimer = setInterval(() => updateCountdown(startTime), 1000);
+                    
+                    addStatusMessage('Shield break triggered');
+                } else {
+                    addStatusMessage(data.error || 'Failed to trigger shield break', true);
+                }
+            } catch (error) {
+                console.error('Error triggering shield break:', error);
+                addStatusMessage('Error triggering shield break', true);
+            } finally {
+                setTimeout(() => {
+                    document.getElementById('triggerButton').disabled = false;
+                }, 2000);
+            }
+        });
+
+        document.getElementById('resetButton').addEventListener('click', async () => {
+            try {
+                const button = document.getElementById('resetButton');
+                button.disabled = true;
+                
+                const response = await fetch('/api/reset', { method: 'POST' });
+                const data = await response.json();
+                
+                if (data.success) {
+                    // Update UI state to show shield is active
+                    const shieldStatus = document.getElementById('shieldStatus');
+                    shieldStatus.textContent = 'SHIELD ACTIVE';
+                    shieldStatus.className = 'shield-status shield-on';
+                    
+                    // Hide countdown if visible
+                    document.getElementById('countdown').classList.remove('visible');
+                    if (countdownTimer) {
+                        clearInterval(countdownTimer);
+                        countdownTimer = null;
+                    }
+                    
+                    // Reset button states
+                    document.getElementById('primaryStatus').className = 'button-status not-pressed';
+                    document.getElementById('primaryStatus').textContent = 'Primary Button: Released';
+                    document.getElementById('secondaryStatus').className = 'button-status not-pressed';
+                    document.getElementById('secondaryStatus').textContent = 'Secondary Button: Released';
+                    
+                    addStatusMessage('System reset successful');
+                } else {
+                    addStatusMessage(data.error || 'Failed to reset system', true);
+                }
+            } catch (error) {
+                console.error('Error resetting system:', error);
+                addStatusMessage('Error resetting system', true);
+            } finally {
+                setTimeout(() => {
+                    document.getElementById('resetButton').disabled = false;
+                }, 2000);
+            }
+        });
+
+        document.getElementById('bossDeathButton').addEventListener('click', async () => {
+            try {
+                const button = document.getElementById('bossDeathButton');
+                button.disabled = true;
+                addStatusMessage('Boss death sequence initiated');
+                
+                const response = await fetch('/api/boss-death', { method: 'POST' });
+                const data = await response.json();
+                
+                if (data.success) {
+                    // Update UI state to show boss is defeated
+                    const shieldStatus = document.getElementById('shieldStatus');
+                    shieldStatus.textContent = 'BOSS DEFEATED';
+                    shieldStatus.className = 'shield-status shield-boss-dead';
+                    
+                    // Hide countdown if visible
+                    document.getElementById('countdown').classList.remove('visible');
+                    if (countdownTimer) {
+                        clearInterval(countdownTimer);
+                        countdownTimer = null;
+                    }
+                    
+                    // Reset button states
+                    document.getElementById('primaryStatus').className = 'button-status not-pressed';
+                    document.getElementById('primaryStatus').textContent = 'Primary Button: Released';
+                    document.getElementById('secondaryStatus').className = 'button-status not-pressed';
+                    document.getElementById('secondaryStatus').textContent = 'Secondary Button: Released';
+                    
+                    addStatusMessage('Boss death sequence completed');
+                } else {
+                    addStatusMessage(data.error || 'Failed to execute boss death sequence', true);
+                }
+            } catch (error) {
+                console.error('Error in boss death sequence:', error);
+                addStatusMessage('Error in boss death sequence', true);
+            } finally {
+                setTimeout(() => {
+                    document.getElementById('bossDeathButton').disabled = false;
+                }, 2000);
+            }
+        });
+
+        document.getElementById('lightsOffButton').addEventListener('click', async () => {
+            try {
+                const button = document.getElementById('lightsOffButton');
+                button.disabled = true;
+                addStatusMessage('Initiating shield power down');
+                
+                const response = await fetch('/api/power-down', { method: 'POST' });
+                const data = await response.json();
+                
+                if (data.success) {
+                    // Update UI state to show shield is powered down
+                    const shieldStatus = document.getElementById('shieldStatus');
+                    shieldStatus.textContent = 'SHIELD OFFLINE';
+                    shieldStatus.className = 'shield-status shield-off';
+                    
+                    // Hide countdown if visible
+                    document.getElementById('countdown').classList.remove('visible');
+                    if (countdownTimer) {
+                        clearInterval(countdownTimer);
+                        countdownTimer = null;
+                    }
+                    
+                    // Reset button states
+                    document.getElementById('primaryStatus').className = 'button-status not-pressed';
+                    document.getElementById('primaryStatus').textContent = 'Primary Button: Released';
+                    document.getElementById('secondaryStatus').className = 'button-status not-pressed';
+                    document.getElementById('secondaryStatus').textContent = 'Secondary Button: Released';
+                    
+                    addStatusMessage('Shield powered down successfully');
+                } else {
+                    addStatusMessage(data.error || 'Failed to power down shield', true);
+                }
+            } catch (error) {
+                console.error('Error powering down shield:', error);
+                addStatusMessage('Error powering down shield', true);
+            } finally {
+                setTimeout(() => {
+                    document.getElementById('lightsOffButton').disabled = false;
+                }, 2000);
+            }
+        });
+
+        // Update status every second
+        updateTimer = setInterval(updateStatus, 1000);
+        // Initial status update
+        updateStatus();
+    </script>
+</body>
+</html> 

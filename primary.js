@@ -10,9 +10,27 @@ const WLED_IP = '192.168.8.212'; // Replace with actual IP if needed
 
 let primaryButtonState = { pressed: false, pressTime: null };
 let secondaryButtonState = { pressed: false, pressTime: null };
-let lightsOff = false;
+let state = { 
+    lightsOff: false,
+    shattering: false,
+    regenerating: false,
+    bossDead: false,
+    powerOff: false
+};
 let input;
 let keyboard;
+let wss;
+
+// Add process-level error handlers
+process.on('uncaughtException', (error) => {
+    console.error('Uncaught Exception:', error);
+    // Don't exit immediately, give time for logs to be written
+    setTimeout(() => process.exit(1), 1000);
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+    console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+});
 
 function findKeyboardDevice() {
     try {
@@ -68,7 +86,16 @@ function initializeKeyboard() {
                     primaryButtonState.pressTime = Date.now();
                     console.log("Primary button PRESSED DOWN at", new Date().toISOString());
                     
-                    if (secondaryButtonState.pressed && !lightsOff) {
+                    // Set timeout to reset button state after 1 second
+                    setTimeout(() => {
+                        if (primaryButtonState.pressed && Date.now() - primaryButtonState.pressTime > 1000) {
+                            primaryButtonState.pressed = false;
+                            primaryButtonState.pressTime = null;
+                            console.log("Reset primary button state due to timeout");
+                        }
+                    }, 1000);
+                    
+                    if (secondaryButtonState.pressed && !state.lightsOff) {
                         const timeDiff = Math.abs(primaryButtonState.pressTime - secondaryButtonState.pressTime);
                         console.log("Both buttons are pressed! Time difference:", timeDiff, "ms");
                         if (timeDiff < 500) {
@@ -95,6 +122,47 @@ function initializeKeyboard() {
                     }
                 }
                 console.log("Current state:", JSON.stringify({ primary: primaryButtonState, secondary: secondaryButtonState }, null, 2));
+            } else if (event.code === 32 && event.value === 1) { // 'd' key press
+                console.log("Boss death sequence triggered by 'd' key");
+                // Reset all states
+                state.lightsOff = false;
+                state.shattering = false;
+                state.regenerating = false;
+                primaryButtonState.pressed = false;
+                primaryButtonState.pressTime = null;
+                secondaryButtonState.pressed = false;
+                secondaryButtonState.pressTime = null;
+                // Activate boss death preset
+                await controlWLED(true, { preset: 2 });
+                console.log("Boss death sequence completed - preset 2 activated");
+            } else if (event.code === 19 && event.value === 1) { // 'r' key press
+                console.log("System reset triggered by 'r' key");
+                // Reset all states
+                state.lightsOff = false;
+                state.shattering = false;
+                state.regenerating = false;
+                primaryButtonState.pressed = false;
+                primaryButtonState.pressTime = null;
+                secondaryButtonState.pressed = false;
+                secondaryButtonState.pressTime = null;
+                // Restore to initial state with preset 1
+                await controlWLED(true, { preset: 1 });
+                console.log("System reset completed - restored to initial state");
+            } else if (event.code === 24 && event.value === 1) { // 'o' key press
+                console.log("Shield power down triggered by 'o' key");
+                // Reset all states
+                state.lightsOff = false;
+                state.shattering = false;
+                state.regenerating = false;
+                state.bossDead = false;
+                state.powerOff = true;  // Set power off state
+                primaryButtonState.pressed = false;
+                primaryButtonState.pressTime = null;
+                secondaryButtonState.pressed = false;
+                secondaryButtonState.pressTime = null;
+                // Power down shield
+                await controlWLED(false);
+                console.log("Shield powered down successfully");
             }
         });
     } catch (error) {
@@ -103,16 +171,114 @@ function initializeKeyboard() {
     }
 }
 
-// Create WebSocket server for secondary Pi connection
-const wss = new WebSocket.Server({ port: SECONDARY_PI_PORT });
+// Function to create and initialize WebSocket server
+function initializeWebSocketServer() {
+    try {
+        if (wss) {
+            try {
+                wss.close();
+            } catch (error) {
+                console.error('Error closing existing WebSocket server:', error);
+            }
+        }
 
-wss.on('listening', () => {
-    console.log(`WebSocket server is listening on port ${SECONDARY_PI_PORT}`);
-});
+        wss = new WebSocket.Server({ port: SECONDARY_PI_PORT });
 
-wss.on('error', (error) => {
-    console.error('WebSocket server error:', error);
-});
+        wss.on('listening', () => {
+            console.log(`WebSocket server is listening on port ${SECONDARY_PI_PORT}`);
+        });
+
+        wss.on('error', (error) => {
+            console.error('WebSocket server error:', error);
+            // Only attempt to restart if it's a fatal error
+            if (error.code === 'EADDRINUSE') {
+                console.log('Port in use, waiting before retry...');
+                setTimeout(initializeWebSocketServer, 5000);
+            }
+        });
+
+        wss.on('close', () => {
+            console.log('WebSocket server closed, attempting to restart...');
+            setTimeout(initializeWebSocketServer, 5000);
+        });
+
+        // Handle WebSocket connection from secondary Pi
+        wss.on('connection', (ws, req) => {
+            console.log('Secondary Pi connected from:', req.socket.remoteAddress);
+            
+            ws.on('error', (error) => {
+                console.error('WebSocket connection error:', error);
+            });
+
+            ws.on('message', (message) => {
+                console.log('Received message from secondary Pi:', message.toString());
+                try {
+                    const data = JSON.parse(message);
+                    if (data.buttonPressed) {
+                        secondaryButtonState.pressed = true;
+                        secondaryButtonState.pressTime = Date.now();
+                        console.log("Secondary button PRESSED DOWN at", new Date().toISOString());
+
+                        // Set timeout to reset button state after 1 second
+                        setTimeout(() => {
+                            if (secondaryButtonState.pressed && Date.now() - secondaryButtonState.pressTime > 1000) {
+                                secondaryButtonState.pressed = false;
+                                secondaryButtonState.pressTime = null;
+                                console.log("Reset secondary button state due to timeout");
+                            }
+                        }, 1000);
+
+                        if (primaryButtonState.pressed && !state.lightsOff) {
+                            const timeDiff = Math.abs(primaryButtonState.pressTime - secondaryButtonState.pressTime);
+                            console.log("Both buttons are pressed! Time difference:", timeDiff, "ms");
+                            if (timeDiff < 500) {
+                                console.log("Time difference within threshold, triggering lights!");
+                                triggerLights();
+                            } else {
+                                console.log("Time difference too large, not triggering lights");
+                                // Reset states if time difference is too large
+                                primaryButtonState.pressed = false;
+                                primaryButtonState.pressTime = null;
+                                secondaryButtonState.pressed = false;
+                                secondaryButtonState.pressTime = null;
+                            }
+                        }
+                    } else {
+                        secondaryButtonState.pressed = false;
+                        console.log("Secondary button RELEASED after", Date.now() - secondaryButtonState.pressTime, "ms");
+                        secondaryButtonState.pressTime = null;
+                        // Also reset primary button if it's been pressed for too long
+                        if (primaryButtonState.pressed && Date.now() - primaryButtonState.pressTime > 1000) {
+                            primaryButtonState.pressed = false;
+                            primaryButtonState.pressTime = null;
+                            console.log("Reset primary button state due to timeout");
+                        }
+                    }
+                    console.log("Current state:", JSON.stringify({ primary: primaryButtonState, secondary: secondaryButtonState }, null, 2));
+                } catch (error) {
+                    console.error('Error processing message from secondary Pi:', error);
+                }
+            });
+
+            ws.on('close', (code, reason) => {
+                console.log(`Secondary Pi disconnected - Code: ${code}, Reason: ${reason}`);
+                secondaryButtonState.pressed = false;
+                secondaryButtonState.pressTime = null;
+                console.log("Reset secondary button state");
+            });
+
+            // Send initial connection confirmation
+            try {
+                ws.send(JSON.stringify({ status: 'connected' }));
+            } catch (error) {
+                console.error('Error sending connection confirmation:', error);
+            }
+        });
+    } catch (error) {
+        console.error('Error initializing WebSocket server:', error);
+        setTimeout(initializeWebSocketServer, 5000);
+    }
+}
 
 async function controlWLED(state, options = {}) {
     console.log(`Attempting to set WLED state to: ${state ? "ON" : "OFF"} with options:`, options);
@@ -174,7 +340,9 @@ async function triggerLights() {
     const SHIELD_DOWN_TIME = 15000; 
     const REGEN_START_TIME = SHIELD_DOWN_TIME * 0.8; // Start regeneration at 80%
     
-    lightsOff = true;
+    state.lightsOff = true;
+    state.shattering = true;
+    state.regenerating = false;
     console.log("Buttons were pressed simultaneously - shattering shield");
     try {
         // Shield shattering effect
@@ -191,7 +359,7 @@ async function triggerLights() {
         await new Promise(resolve => setTimeout(resolve, 100)); // Shorter initial hold
 
         // Random flicker pattern
-        for (let i = 0; i < SHATTER_FLICKERS && lightsOff; i++) {
+        for (let i = 0; i < SHATTER_FLICKERS && state.lightsOff; i++) {
             // Random duration for this flicker
             const flickerDuration = Math.floor(
                 Math.random() * (FLICKER_DURATION_MAX - FLICKER_DURATION_MIN) + FLICKER_DURATION_MIN
@@ -222,7 +390,7 @@ async function triggerLights() {
         const FADE_STEPS = 5;
         const FADE_DURATION = 100; // Duration of each fade step
         
-        for (let i = FADE_STEPS; i >= 0 && lightsOff; i--) {
+        for (let i = FADE_STEPS; i >= 0 && state.lightsOff; i--) {
             const brightness = Math.floor((i / FADE_STEPS) * 255);
             await controlWLED(true, {
                 brightness: brightness,
@@ -234,11 +402,15 @@ async function triggerLights() {
         
         // Final shield break
         await controlWLED(false);
+        state.shattering = false;
         console.log("Shield shattered, starting shield down timer");
 
         // Wait until regeneration should start
         await new Promise(resolve => setTimeout(resolve, REGEN_START_TIME));
 
+        // Start regeneration
+        state.regenerating = true;
+        
         // Start regeneration pulses with exponential timing
         const PULSE_DURATION = SHIELD_DOWN_TIME - REGEN_START_TIME;
         const NUM_PULSES = 12; // Increased for smoother color transition
@@ -257,7 +429,7 @@ async function triggerLights() {
 
         // Normalize intervals to fit within PULSE_DURATION
         const scaleFactor = PULSE_DURATION / totalTime;
-        for (let i = 0; i < NUM_PULSES && lightsOff; i++) {
+        for (let i = 0; i < NUM_PULSES && state.lightsOff; i++) {
             // Turn on with increasing brightness
             const intensity = (i + 1) / NUM_PULSES;
             await pulseShield(intensity);
@@ -269,7 +441,7 @@ async function triggerLights() {
         }
 
         // Final red flash at full brightness
-        if (lightsOff) {
+        if (state.lightsOff) {
             await controlWLED(true, {
                 brightness: 255,
                 color: { r: 255, g: 0, b: 0 },
@@ -279,85 +451,67 @@ async function triggerLights() {
         }
 
         // Restore shield to full power (preset 1)
-        if (lightsOff) {
+        if (state.lightsOff) {
+            // First, set regenerating to false to ensure proper UI update
+            state.regenerating = false;
+            await new Promise(resolve => setTimeout(resolve, 100)); // Small delay for UI update
+            
+            // Then restore shield and reset all states
             await controlWLED(true, { preset: 1 });
-            lightsOff = false;
+            
+            // Reset ALL states in the correct order
+            state.shattering = false;
+            state.lightsOff = false;
+            state.bossDead = false;
+            state.powerOff = false;
+            
+            // Reset button states
+            primaryButtonState.pressed = false;
+            primaryButtonState.pressTime = null;
+            secondaryButtonState.pressed = false;
+            secondaryButtonState.pressTime = null;
             console.log("Shield regeneration complete, boss is invulnerable again");
         }
     } catch (error) {
         console.error("Error in triggerLights:", error);
         // Ensure shield comes back up even if there's an error
         await controlWLED(true, { preset: 1 });
-        lightsOff = false;
-    }
-}
-
-// Handle WebSocket connection from secondary Pi
-wss.on('connection', (ws, req) => {
-    console.log('Secondary Pi connected from:', req.socket.remoteAddress);
-    
-    ws.on('error', (error) => {
-        console.error('WebSocket connection error:', error);
-    });
-
-    ws.on('message', (message) => {
-        console.log('Received message from secondary Pi:', message.toString());
-        try {
-            const data = JSON.parse(message);
-            if (data.buttonPressed) {
-                secondaryButtonState.pressed = true;
-                secondaryButtonState.pressTime = Date.now();
-                console.log("Secondary button PRESSED DOWN at", new Date().toISOString());
-
-                if (primaryButtonState.pressed && !lightsOff) {
-                    const timeDiff = Math.abs(primaryButtonState.pressTime - secondaryButtonState.pressTime);
-                    console.log("Both buttons are pressed! Time difference:", timeDiff, "ms");
-                    if (timeDiff < 500) {
-                        console.log("Time difference within threshold, triggering lights!");
-                        triggerLights();
-                    } else {
-                        console.log("Time difference too large, not triggering lights");
-                        // Reset states if time difference is too large
-                        primaryButtonState.pressed = false;
-                        primaryButtonState.pressTime = null;
-                        secondaryButtonState.pressed = false;
-                        secondaryButtonState.pressTime = null;
-                    }
-                }
-            } else {
-                secondaryButtonState.pressed = false;
-                console.log("Secondary button RELEASED after", Date.now() - secondaryButtonState.pressTime, "ms");
-                secondaryButtonState.pressTime = null;
-                // Also reset primary button if it's been pressed for too long
-                if (primaryButtonState.pressed && Date.now() - primaryButtonState.pressTime > 1000) {
-                    primaryButtonState.pressed = false;
-                    primaryButtonState.pressTime = null;
-                    console.log("Reset primary button state due to timeout");
-                }
-            }
-            console.log("Current state:", JSON.stringify({ primary: primaryButtonState, secondary: secondaryButtonState }, null, 2));
-        } catch (error) {
-            console.error('Error processing message from secondary Pi:', error);
-        }
-    });
-
-    ws.on('close', (code, reason) => {
-        console.log(`Secondary Pi disconnected - Code: ${code}, Reason: ${reason}`);
+        // Reset ALL states in error case too
+        state.lightsOff = false;
+        state.shattering = false;
+        state.regenerating = false;
+        state.bossDead = false;
+        state.powerOff = false;
+        // Reset button states on error too
+        primaryButtonState.pressed = false;
+        primaryButtonState.pressTime = null;
         secondaryButtonState.pressed = false;
         secondaryButtonState.pressTime = null;
-        console.log("Reset secondary button state");
-    });
-
-    // Send initial connection confirmation
-    try {
-        ws.send(JSON.stringify({ status: 'connected' }));
-    } catch (error) {
-        console.error('Error sending connection confirmation:', error);
     }
-});
+}
 
 // Initialize everything
 console.log("Primary Pi server starting up...");
 initializeKeyboard();
+initializeWebSocketServer();
 console.log(`Primary Pi server starting up at ${new Date().toISOString()}`);
-console.log('Primary Pi server running on port', SECONDARY_PI_PORT); 
+console.log('Primary Pi server running on port', SECONDARY_PI_PORT);
+
+// Initialize web interface
+const webInterface = require('./web-interface');
+webInterface.initialize({
+    primaryButtonState,
+    secondaryButtonState,
+    state,
+    triggerLights,
+    controlWLED
+});
+
+// Export functionality for web interface
+module.exports = {
+    primaryButtonState,
+    secondaryButtonState,
+    state,
+    triggerLights,
+    controlWLED
+}; 
