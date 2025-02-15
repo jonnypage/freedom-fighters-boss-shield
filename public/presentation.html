@@ -18,6 +18,11 @@
             min-height: 100vh;
             margin: 0;
             font-family: 'Arial', sans-serif;
+            transition: background-color 1s ease;
+        }
+
+        body.boss-defeated {
+            background-color: white;
         }
 
         .shield-status {
@@ -27,6 +32,8 @@
             font-weight: bold;
             text-transform: uppercase;
             transition: all 0.3s ease;
+            white-space: pre-line;
+            line-height: 1.2;
         }
 
         .shield-active {
@@ -53,9 +60,11 @@
         }
 
         .shield-boss-dead {
-            color: #00ffff;
-            text-shadow: 0 0 20px #00ffff;
-            animation: fade 2s infinite;
+            color: #0088ff;
+            text-shadow: 0 0 20px #0088ff;
+            animation: victoryPulse 2s infinite;
+            padding: 30px;
+            border-radius: 15px;
         }
 
         .shield-off {
@@ -120,10 +129,19 @@
             100% { text-shadow: 0 0 20px #ff00ff; }
         }
 
-        @keyframes fade {
-            0% { opacity: 1; }
-            50% { opacity: 0.5; }
-            100% { opacity: 1; }
+        @keyframes victoryPulse {
+            0% { 
+                opacity: 1;
+                text-shadow: 0 0 20px #0088ff;
+            }
+            50% { 
+                opacity: 0.8;
+                text-shadow: 0 0 40px #0088ff;
+            }
+            100% { 
+                opacity: 1;
+                text-shadow: 0 0 20px #0088ff;
+            }
         }
     </style>
 </head>
@@ -165,7 +183,7 @@
                 className: 'shield-status shield-regenerating'
             },
             [ShieldState.BOSS_DEAD]: {
-                text: 'BOSS DEFEATED',
+                text: 'YOU HAVE DEFEATED SPECTER NOVA\nMISSION SUCCESSFUL',
                 className: 'shield-status shield-boss-dead'
             },
             [ShieldState.POWER_OFF]: {
@@ -219,6 +237,13 @@
             if (currentConfig && lastState !== data.currentState) {
                 shieldStatus.className = 'shield-status';
                 shieldStatus.textContent = currentConfig.text;
+                
+                // Update body class for boss defeat state
+                if (data.currentState === ShieldState.BOSS_DEAD) {
+                    document.body.classList.add('boss-defeated');
+                } else {
+                    document.body.classList.remove('boss-defeated');
+                }
                 
                 requestAnimationFrame(() => {
                     requestAnimationFrame(() => {
