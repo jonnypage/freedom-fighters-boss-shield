@@ -3,6 +3,16 @@ const path = require('path');
 const app = express();
 const port = 3000;
 
+// Define shield states as an enum
+const ShieldState = {
+    ACTIVE: 'ACTIVE',
+    SHATTERING: 'SHATTERING',
+    BROKEN: 'BROKEN',
+    REGENERATING: 'REGENERATING',
+    BOSS_DEAD: 'BOSS_DEAD',
+    POWER_OFF: 'POWER_OFF'
+};
+
 // Store reference to the primary.js exports
 let primaryModule = null;
 
@@ -16,28 +26,27 @@ app.get('/api/status', (req, res) => {
         return res.status(500).json({ error: 'Primary module not initialized' });
     }
     
-    let shieldStatus = 'on';
-    if (primaryModule.state.shattering) {
-        shieldStatus = 'shattering';
-    } else if (primaryModule.state.regenerating) {
-        shieldStatus = 'regenerating';
-    } else if (primaryModule.state.lightsOff && !primaryModule.state.regenerating) {
-        shieldStatus = 'broken';
-    } else if (primaryModule.state.bossDead) {
-        shieldStatus = 'boss-dead';
-    } else if (primaryModule.state.powerOff) {
-        shieldStatus = 'off';
-    } else if (!primaryModule.state.lightsOff && !primaryModule.state.shattering && 
-               !primaryModule.state.regenerating && !primaryModule.state.bossDead && 
-               !primaryModule.state.powerOff) {
-        shieldStatus = 'on';
-    }
+    // Map the shield state to a status for the frontend
+    const stateToStatus = {
+        [ShieldState.ACTIVE]: 'on',
+        [ShieldState.SHATTERING]: 'shattering',
+        [ShieldState.BROKEN]: 'broken',
+        [ShieldState.REGENERATING]: 'regenerating',
+        [ShieldState.BOSS_DEAD]: 'boss-dead',
+        [ShieldState.POWER_OFF]: 'off'
+    };
     
-    res.json({
-        primaryButton: primaryModule.primaryButtonState,
-        secondaryButton: primaryModule.secondaryButtonState,
-        shieldStatus: shieldStatus
-    });
+    // Cache the response to prevent race conditions
+    const response = {
+        primaryButton: {...primaryModule.primaryButtonState},
+        secondaryButton: {...primaryModule.secondaryButtonState},
+        shieldStatus: stateToStatus[primaryModule.state.shieldState],
+        isRegenerating: primaryModule.state.shieldState === ShieldState.REGENERATING,
+        // Add current state for debugging
+        currentState: primaryModule.state.shieldState
+    };
+    
+    res.json(response);
 });
 
 app.post('/api/trigger', async (req, res) => {
@@ -72,11 +81,7 @@ app.post('/api/reset', (req, res) => {
         primaryModule.primaryButtonState.pressTime = null;
         primaryModule.secondaryButtonState.pressed = false;
         primaryModule.secondaryButtonState.pressTime = null;
-        primaryModule.state.lightsOff = false;
-        primaryModule.state.shattering = false;
-        primaryModule.state.regenerating = false;
-        primaryModule.state.bossDead = false;
-        primaryModule.state.powerOff = false;
+        primaryModule.state.shieldState = ShieldState.ACTIVE;
 
         // Turn the lights back on with preset 1
         primaryModule.controlWLED(true, { preset: 1 });
@@ -94,12 +99,8 @@ app.post('/api/boss-death', async (req, res) => {
     }
 
     try {
-        // Reset all states
-        primaryModule.state.lightsOff = false;
-        primaryModule.state.shattering = false;
-        primaryModule.state.regenerating = false;
-        primaryModule.state.powerOff = false;
-        primaryModule.state.bossDead = true;  // Set boss dead state
+        // Set state to boss dead
+        primaryModule.state.shieldState = ShieldState.BOSS_DEAD;
         primaryModule.primaryButtonState.pressed = false;
         primaryModule.primaryButtonState.pressTime = null;
         primaryModule.secondaryButtonState.pressed = false;
@@ -120,12 +121,8 @@ app.post('/api/power-down', async (req, res) => {
     }
 
     try {
-        // Reset all states
-        primaryModule.state.lightsOff = false;
-        primaryModule.state.shattering = false;
-        primaryModule.state.regenerating = false;
-        primaryModule.state.bossDead = false;
-        primaryModule.state.powerOff = true;  // Set power off state
+        // Set state to power off
+        primaryModule.state.shieldState = ShieldState.POWER_OFF;
         primaryModule.primaryButtonState.pressed = false;
         primaryModule.primaryButtonState.pressTime = null;
         primaryModule.secondaryButtonState.pressed = false;
@@ -148,4 +145,5 @@ function initialize(primaryModuleRef) {
     });
 }
 
-module.exports = { initialize }; 
+// Export the ShieldState enum along with initialize function
+module.exports = { initialize, ShieldState }; 

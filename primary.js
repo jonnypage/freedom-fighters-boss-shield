@@ -3,19 +3,18 @@ const InputEvent = require('input-event');
 const fetch = require('node-fetch');
 const fs = require('fs');
 const { execSync } = require('child_process');
+const player = require('play-sound')(opts = {})
+const { ShieldState } = require('./web-interface');
 
 // Configuration
 const SECONDARY_PI_PORT = 8080;
 const WLED_IP = '192.168.8.212'; // Replace with actual IP if needed
+const AUDIO_PATH = './audio/';
 
 let primaryButtonState = { pressed: false, pressTime: null };
 let secondaryButtonState = { pressed: false, pressTime: null };
 let state = { 
-    lightsOff: false,
-    shattering: false,
-    regenerating: false,
-    bossDead: false,
-    powerOff: false
+    shieldState: ShieldState.ACTIVE
 };
 let input;
 let keyboard;
@@ -95,7 +94,7 @@ function initializeKeyboard() {
                         }
                     }, 1000);
                     
-                    if (secondaryButtonState.pressed && !state.lightsOff) {
+                    if (secondaryButtonState.pressed && !state.shieldState === ShieldState.ACTIVE) {
                         const timeDiff = Math.abs(primaryButtonState.pressTime - secondaryButtonState.pressTime);
                         console.log("Both buttons are pressed! Time difference:", timeDiff, "ms");
                         if (timeDiff < 500) {
@@ -125,9 +124,7 @@ function initializeKeyboard() {
             } else if (event.code === 32 && event.value === 1) { // 'd' key press
                 console.log("Boss death sequence triggered by 'd' key");
                 // Reset all states
-                state.lightsOff = false;
-                state.shattering = false;
-                state.regenerating = false;
+                state.shieldState = ShieldState.ACTIVE;
                 primaryButtonState.pressed = false;
                 primaryButtonState.pressTime = null;
                 secondaryButtonState.pressed = false;
@@ -138,9 +135,7 @@ function initializeKeyboard() {
             } else if (event.code === 19 && event.value === 1) { // 'r' key press
                 console.log("System reset triggered by 'r' key");
                 // Reset all states
-                state.lightsOff = false;
-                state.shattering = false;
-                state.regenerating = false;
+                state.shieldState = ShieldState.ACTIVE;
                 primaryButtonState.pressed = false;
                 primaryButtonState.pressTime = null;
                 secondaryButtonState.pressed = false;
@@ -151,11 +146,7 @@ function initializeKeyboard() {
             } else if (event.code === 24 && event.value === 1) { // 'o' key press
                 console.log("Shield power down triggered by 'o' key");
                 // Reset all states
-                state.lightsOff = false;
-                state.shattering = false;
-                state.regenerating = false;
-                state.bossDead = false;
-                state.powerOff = true;  // Set power off state
+                state.shieldState = ShieldState.ACTIVE;
                 primaryButtonState.pressed = false;
                 primaryButtonState.pressTime = null;
                 secondaryButtonState.pressed = false;
@@ -228,7 +219,7 @@ function initializeWebSocketServer() {
                             }
                         }, 1000);
 
-                        if (primaryButtonState.pressed && !state.lightsOff) {
+                        if (primaryButtonState.pressed && !state.shieldState === ShieldState.ACTIVE) {
                             const timeDiff = Math.abs(primaryButtonState.pressTime - secondaryButtonState.pressTime);
                             console.log("Both buttons are pressed! Time difference:", timeDiff, "ms");
                             if (timeDiff < 500) {
@@ -336,19 +327,36 @@ async function pulseShield(intensity) {
     });
 }
 
+// Function to play audio file
+function playAudio(filename) {
+    const audioFile = AUDIO_PATH + filename;
+    if (fs.existsSync(audioFile)) {
+        // Use mpg123 for MP3 playback
+        player.play(audioFile, {
+            player: 'mpg123',
+            mpg123: ['-q']  // Quiet mode, no status output
+        }, (err) => {
+            if (err) {
+                console.error(`Error playing audio ${filename}:`, err);
+            }
+        });
+    } else {
+        console.error(`Audio file not found: ${audioFile}`);
+    }
+}
+
 async function triggerLights() {
     const SHIELD_DOWN_TIME = 15000; 
     const REGEN_START_TIME = SHIELD_DOWN_TIME * 0.8; // Start regeneration at 80%
     
-    state.lightsOff = true;
-    state.shattering = true;
-    state.regenerating = false;
+    state.shieldState = ShieldState.SHATTERING;
     console.log("Buttons were pressed simultaneously - shattering shield");
+    
     try {
         // Shield shattering effect
-        const SHATTER_FLICKERS = 5; // Reduced number of flickers
-        const FLICKER_DURATION_MIN = 25; // Faster flicker minimum
-        const FLICKER_DURATION_MAX = 75; // Faster flicker maximum
+        const SHATTER_FLICKERS = 5;
+        const FLICKER_DURATION_MIN = 25;
+        const FLICKER_DURATION_MAX = 75;
         
         // Start with full brightness
         await controlWLED(true, {
@@ -356,10 +364,10 @@ async function triggerLights() {
             color: { r: 255, g: 0, b: 0 },
             effect: 0
         });
-        await new Promise(resolve => setTimeout(resolve, 100)); // Shorter initial hold
+        await new Promise(resolve => setTimeout(resolve, 100));
 
         // Random flicker pattern
-        for (let i = 0; i < SHATTER_FLICKERS && state.lightsOff; i++) {
+        for (let i = 0; i < SHATTER_FLICKERS && state.shieldState === ShieldState.SHATTERING; i++) {
             // Random duration for this flicker
             const flickerDuration = Math.floor(
                 Math.random() * (FLICKER_DURATION_MAX - FLICKER_DURATION_MIN) + FLICKER_DURATION_MIN
@@ -388,9 +396,9 @@ async function triggerLights() {
 
         // Final fade out sequence
         const FADE_STEPS = 5;
-        const FADE_DURATION = 100; // Duration of each fade step
+        const FADE_DURATION = 100;
         
-        for (let i = FADE_STEPS; i >= 0 && state.lightsOff; i--) {
+        for (let i = FADE_STEPS; i >= 0 && state.shieldState === ShieldState.SHATTERING; i--) {
             const brightness = Math.floor((i / FADE_STEPS) * 255);
             await controlWLED(true, {
                 brightness: brightness,
@@ -402,14 +410,21 @@ async function triggerLights() {
         
         // Final shield break
         await controlWLED(false);
-        state.shattering = false;
+        state.shieldState = ShieldState.BROKEN;
+        
+        // Play shield broken sound after shattering completes
+        playAudio('shield-broken.mp3');
+        
         console.log("Shield shattered, starting shield down timer");
 
         // Wait until regeneration should start
         await new Promise(resolve => setTimeout(resolve, REGEN_START_TIME));
 
         // Start regeneration
-        state.regenerating = true;
+        state.shieldState = ShieldState.REGENERATING;
+        
+        // Play regeneration sound
+        playAudio('shield-regenerating.mp3');
         
         // Start regeneration pulses with exponential timing
         const PULSE_DURATION = SHIELD_DOWN_TIME - REGEN_START_TIME;
@@ -429,7 +444,7 @@ async function triggerLights() {
 
         // Normalize intervals to fit within PULSE_DURATION
         const scaleFactor = PULSE_DURATION / totalTime;
-        for (let i = 0; i < NUM_PULSES && state.lightsOff; i++) {
+        for (let i = 0; i < NUM_PULSES && state.shieldState === ShieldState.REGENERATING; i++) {
             // Turn on with increasing brightness
             const intensity = (i + 1) / NUM_PULSES;
             await pulseShield(intensity);
@@ -441,7 +456,7 @@ async function triggerLights() {
         }
 
         // Final red flash at full brightness
-        if (state.lightsOff) {
+        if (state.shieldState === ShieldState.REGENERATING) {
             await controlWLED(true, {
                 brightness: 255,
                 color: { r: 255, g: 0, b: 0 },
@@ -451,19 +466,18 @@ async function triggerLights() {
         }
 
         // Restore shield to full power (preset 1)
-        if (state.lightsOff) {
-            // First, set regenerating to false to ensure proper UI update
-            state.regenerating = false;
-            await new Promise(resolve => setTimeout(resolve, 100)); // Small delay for UI update
+        if (state.shieldState === ShieldState.REGENERATING) {
+            // Reset state to active
+            state.shieldState = ShieldState.ACTIVE;
+
+            // Small delay for UI update
+            await new Promise(resolve => setTimeout(resolve, 100));
             
-            // Then restore shield and reset all states
+            // Then restore shield
             await controlWLED(true, { preset: 1 });
             
-            // Reset ALL states in the correct order
-            state.shattering = false;
-            state.lightsOff = false;
-            state.bossDead = false;
-            state.powerOff = false;
+            // Play shield active sound
+            playAudio('shield-active.mp3');
             
             // Reset button states
             primaryButtonState.pressed = false;
@@ -476,12 +490,8 @@ async function triggerLights() {
         console.error("Error in triggerLights:", error);
         // Ensure shield comes back up even if there's an error
         await controlWLED(true, { preset: 1 });
-        // Reset ALL states in error case too
-        state.lightsOff = false;
-        state.shattering = false;
-        state.regenerating = false;
-        state.bossDead = false;
-        state.powerOff = false;
+        // Reset state in error case too
+        state.shieldState = ShieldState.ACTIVE;
         // Reset button states on error too
         primaryButtonState.pressed = false;
         primaryButtonState.pressTime = null;
