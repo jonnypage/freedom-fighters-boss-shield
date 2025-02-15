@@ -2,7 +2,7 @@
 
 *This project was created 100% by a Claude AI agent*
 
-This project implements a two-button control system using two Raspberry Pis to control a WLED light controller. When both buttons (Enter keys on Logitech K400 Plus keyboards) are pressed simultaneously, it triggers a shield-breaking effect with various visual stages.
+This project implements a two-button control system using two Raspberry Pis to control a WLED light controller. When both buttons (Enter keys on any USB keyboards) are pressed simultaneously, it triggers a shield-breaking effect with various visual stages.
 
 ## Features
 
@@ -30,7 +30,7 @@ A web-based control interface is available on port 3000 that provides:
 ### Prerequisites
 - Two Raspberry Pis (primary and secondary)
 - Node.js installed on both Raspberry Pis
-- Logitech K400 Plus keyboards connected to both Raspberry Pis
+- USB keyboards connected to both Raspberry Pis
 - WLED controller set up and accessible on the network
 
 ### Installation
@@ -45,13 +45,13 @@ A web-based control interface is available on port 3000 that provides:
 
 1. On the primary Pi:
    - Verify the WLED_IP in `primary.js` matches your WLED controller's IP address (default: 192.168.8.212)
-   - The system will automatically detect the Logitech K400 Plus keyboard
+   - The system will automatically detect the USB keyboard
    - Configure systemd to auto-start the service on boot
    - Web interface will be available at http://[PRIMARY_PI_IP]:3000
 
 2. On the secondary Pi:
    - Verify the PRIMARY_PI_ADDRESS in `secondary.js` points to your primary Pi (default: ws://192.168.8.142:8080)
-   - The system will automatically detect the Logitech K400 Plus keyboard
+   - The system will automatically detect the USB keyboard
    - Configure systemd to auto-start the service on boot
 
 ### Network Setup
@@ -102,7 +102,7 @@ The system includes audio cues for various states:
 Both Pis are configured to automatically start the application on boot using systemd/journalctl, ensuring the system recovers automatically from power issues or restarts.
 
 ## Troubleshooting
-- If the keyboard isn't detected, ensure you're using a Logitech K400 Plus keyboard
+- If the keyboard isn't detected, ensure it's properly connected and recognized as a USB HID device
 - If the Pis can't connect, check network connectivity and verify the PRIMARY_PI_ADDRESS
 - If WLED control isn't working, verify the WLED controller's IP address and network connectivity
 - Check journalctl logs for any startup or runtime errors

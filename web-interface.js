@@ -2,6 +2,7 @@ const express = require('express');
 const path = require('path');
 const app = express();
 const port = 3000;
+const WebSocket = require('ws');
 
 // Define shield states as an enum
 const ShieldState = {
@@ -15,10 +16,39 @@ const ShieldState = {
 
 // Store reference to the primary.js exports
 let primaryModule = null;
+let wss = null;
 
 // Serve static files from public directory
 app.use(express.static(path.join(__dirname, 'public')));
 app.use(express.json());
+
+// Function to broadcast state to all connected web clients
+function broadcastState() {
+    if (!wss) return;
+
+    const stateToStatus = {
+        [ShieldState.ACTIVE]: 'on',
+        [ShieldState.SHATTERING]: 'shattering',
+        [ShieldState.BROKEN]: 'broken',
+        [ShieldState.REGENERATING]: 'regenerating',
+        [ShieldState.BOSS_DEAD]: 'boss-dead',
+        [ShieldState.POWER_OFF]: 'off'
+    };
+
+    const state = {
+        primaryButton: {...primaryModule.primaryButtonState},
+        secondaryButton: {...primaryModule.secondaryButtonState},
+        shieldStatus: stateToStatus[primaryModule.state.shieldState],
+        isRegenerating: primaryModule.state.shieldState === ShieldState.REGENERATING,
+        currentState: primaryModule.state.shieldState
+    };
+
+    wss.clients.forEach(client => {
+        if (client.readyState === WebSocket.OPEN) {
+            client.send(JSON.stringify(state));
+        }
+    });
+}
 
 // API Endpoints
 app.get('/api/status', (req, res) => {
@@ -42,7 +72,6 @@ app.get('/api/status', (req, res) => {
         secondaryButton: {...primaryModule.secondaryButtonState},
         shieldStatus: stateToStatus[primaryModule.state.shieldState],
         isRegenerating: primaryModule.state.shieldState === ShieldState.REGENERATING,
-        // Add current state for debugging
         currentState: primaryModule.state.shieldState
     };
     
@@ -140,10 +169,24 @@ app.post('/api/power-down', async (req, res) => {
 // Initialize the web server with a reference to the primary module
 function initialize(primaryModuleRef) {
     primaryModule = primaryModuleRef;
+    
+    // Set up WebSocket server for real-time updates
+    wss = new WebSocket.Server({ port: 3001 });
+    
+    wss.on('connection', (ws) => {
+        console.log('Web client connected');
+        // Send initial state
+        broadcastState();
+    });
+
+    // Watch for state changes
+    const stateInterval = setInterval(broadcastState, 100);
+
     app.listen(port, '0.0.0.0', () => {
         console.log(`Web interface running at http://0.0.0.0:${port}`);
+        console.log('WebSocket server running on port 3001');
     });
 }
 
-// Export the ShieldState enum along with initialize function
-module.exports = { initialize, ShieldState }; 
+// Export the ShieldState enum along with initialize function and broadcastState
+module.exports = { initialize, ShieldState, broadcastState }; 

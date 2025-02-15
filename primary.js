@@ -59,6 +59,8 @@ function findKeyboardDevice() {
             const devicePath = `/dev/input/event${eventId}`;
             console.log(`Found Logitech keyboard at ${devicePath}`);
             return devicePath;
+        } else {
+            console.error("No Logitech keyboard found in device list");
         }
     } catch (error) {
         console.error("Error finding keyboard:", error);
@@ -91,10 +93,11 @@ function initializeKeyboard() {
                             primaryButtonState.pressed = false;
                             primaryButtonState.pressTime = null;
                             console.log("Reset primary button state due to timeout");
+                            webInterface.broadcastState(); // Broadcast state change on timeout
                         }
                     }, 1000);
                     
-                    if (secondaryButtonState.pressed && !state.shieldState === ShieldState.ACTIVE) {
+                    if (secondaryButtonState.pressed && state.shieldState === ShieldState.ACTIVE) {
                         const timeDiff = Math.abs(primaryButtonState.pressTime - secondaryButtonState.pressTime);
                         console.log("Both buttons are pressed! Time difference:", timeDiff, "ms");
                         if (timeDiff < 500) {
@@ -118,6 +121,7 @@ function initializeKeyboard() {
                         secondaryButtonState.pressed = false;
                         secondaryButtonState.pressTime = null;
                         console.log("Reset secondary button state due to timeout");
+                        webInterface.broadcastState(); // Broadcast state change on timeout
                     }
                 }
                 console.log("Current state:", JSON.stringify({ primary: primaryButtonState, secondary: secondaryButtonState }, null, 2));
@@ -216,10 +220,11 @@ function initializeWebSocketServer() {
                                 secondaryButtonState.pressed = false;
                                 secondaryButtonState.pressTime = null;
                                 console.log("Reset secondary button state due to timeout");
+                                webInterface.broadcastState(); // Broadcast state change on timeout
                             }
                         }, 1000);
 
-                        if (primaryButtonState.pressed && !state.shieldState === ShieldState.ACTIVE) {
+                        if (primaryButtonState.pressed && state.shieldState === ShieldState.ACTIVE) {
                             const timeDiff = Math.abs(primaryButtonState.pressTime - secondaryButtonState.pressTime);
                             console.log("Both buttons are pressed! Time difference:", timeDiff, "ms");
                             if (timeDiff < 500) {
@@ -243,6 +248,7 @@ function initializeWebSocketServer() {
                             primaryButtonState.pressed = false;
                             primaryButtonState.pressTime = null;
                             console.log("Reset primary button state due to timeout");
+                            webInterface.broadcastState(); // Broadcast state change on timeout
                         }
                     }
                     console.log("Current state:", JSON.stringify({ primary: primaryButtonState, secondary: secondaryButtonState }, null, 2));
