@@ -254,7 +254,7 @@
         }
 
         function updateUI(data) {
-            // Always update button states regardless of shield state
+            // Update button states
             const primaryStatus = document.getElementById('primaryStatus');
             const secondaryStatus = document.getElementById('secondaryStatus');
             
@@ -264,56 +264,30 @@
             secondaryStatus.textContent = `Secondary Button: ${data.secondaryButton.pressed ? 'Pressed' : 'Released'}`;
             secondaryStatus.className = `button-status ${data.secondaryButton.pressed ? 'pressed' : 'not-pressed'}`;
 
-            // If we're transitioning, only allow shield state updates that match the expected next state
-            if (isTransitioning) {
-                if (data.currentState === ShieldState.ACTIVE || 
-                    data.currentState === ShieldState.BROKEN || 
-                    data.currentState === ShieldState.REGENERATING) {
-                    isTransitioning = false;  // Allow the transition to complete
-                } else {
-                    return;  // Skip other updates during transition
-                }
-            }
+            // Update shield status
+            const shieldStatus = document.getElementById('shieldStatus');
+            const currentConfig = stateConfig[data.currentState];
             
-            // Only update shield state if it has changed
-            if (lastState !== data.currentState) {
-                const shieldStatus = document.getElementById('shieldStatus');
-                const currentConfig = stateConfig[data.currentState];
+            if (currentConfig) {
+                shieldStatus.textContent = currentConfig.text;
+                shieldStatus.className = currentConfig.className;
                 
-                if (currentConfig) {
-                    // Force remove any existing animation classes
-                    shieldStatus.className = 'shield-status';
-                    
-                    // Update the status immediately
-                    shieldStatus.textContent = currentConfig.text;
-                    
-                    // Use requestAnimationFrame for smoother class transition
-                    requestAnimationFrame(() => {
-                        requestAnimationFrame(() => {  // Double RAF for more reliable animation
-                            shieldStatus.className = currentConfig.className;
-                        });
-                    });
-                    
-                    // Handle countdown visibility
-                    const countdownElement = document.getElementById('countdown');
-                    if (data.currentState === ShieldState.BROKEN) {
-                        countdownElement.classList.add('visible');
-                        if (!countdownTimer) {
-                            const startTime = Date.now();
-                            updateCountdown(startTime);
-                            countdownTimer = setInterval(() => updateCountdown(startTime), 1000);
-                        }
-                    } else {
-                        countdownElement.classList.remove('visible');
-                        if (countdownTimer) {
-                            clearInterval(countdownTimer);
-                            countdownTimer = null;
-                        }
+                // Handle countdown visibility and updates
+                const countdownElement = document.getElementById('countdown');
+                if (data.currentState === ShieldState.BROKEN) {
+                    countdownElement.classList.add('visible');
+                    if (!countdownTimer) {
+                        const startTime = Date.now();
+                        updateCountdown(startTime);
+                        countdownTimer = setInterval(() => updateCountdown(startTime), 1000);
+                    }
+                } else {
+                    countdownElement.classList.remove('visible');
+                    if (countdownTimer) {
+                        clearInterval(countdownTimer);
+                        countdownTimer = null;
                     }
                 }
-                
-                // Update last state
-                lastState = data.currentState;
             }
         }
 
@@ -353,20 +327,16 @@
             try {
                 const button = document.getElementById('triggerButton');
                 button.disabled = true;
-                isTransitioning = true;  // Set transition lock
+                addStatusMessage('Shield break triggered');
                 
                 const response = await fetch('/api/trigger', { method: 'POST' });
                 const data = await response.json();
                 
-                if (data.success) {
-                    addStatusMessage('Shield break triggered');
-                } else {
-                    isTransitioning = false;  // Release lock if failed
+                if (!data.success) {
                     addStatusMessage(data.error || 'Failed to trigger shield break', true);
                 }
             } catch (error) {
                 console.error('Error triggering shield break:', error);
-                isTransitioning = false;  // Release lock on error
                 addStatusMessage('Error triggering shield break', true);
             } finally {
                 setTimeout(() => {

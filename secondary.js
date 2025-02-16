@@ -9,8 +9,8 @@ const PRIMARY_PI_ADDRESS = 'ws://192.168.8.142:8080';
 let ws;
 let reconnectTimeout;
 let buttonState = { pressed: false, pressTime: null };
-let input;
-let keyboard;
+let inputs = [];
+let keyboards = [];
 
 // Add process-level error handlers
 process.on('uncaughtException', (error) => {
@@ -23,99 +23,166 @@ process.on('unhandledRejection', (reason, promise) => {
     console.error('Unhandled Rejection at:', promise, 'reason:', reason);
 });
 
-function findKeyboardDevice() {
+function findKeyboardDevices() {
     try {
-        // Read /proc/bus/input/devices to find the Logitech K400 Plus
+        // Read /proc/bus/input/devices to find all compatible keyboards
         const devices = execSync("cat /proc/bus/input/devices").toString();
         const lines = devices.split("\n");
         let foundKeyboard = false;
-        let eventId = null;
+        let eventIds = [];
+        let currentKeyboardName = "";
 
         for (let i = 0; i < lines.length; i++) {
-            if (lines[i].includes("Logitech K400") || lines[i].includes("K400 Plus")) {
+            // Look for either Logitech K400 or INSTANT USB Keyboard
+            if (lines[i].includes("Logitech K400") || lines[i].includes("K400 Plus") || lines[i].includes("INSTANT USB Keyboard")) {
                 foundKeyboard = true;
+                currentKeyboardName = lines[i].match(/Name="([^"]+)"/)[1];
+                console.log("Found keyboard:", currentKeyboardName);
             }
-            if (foundKeyboard && lines[i].includes("Handlers=")) {
+            // Only add event ID for main keyboard interfaces (skip Consumer Control and System Control)
+            if (foundKeyboard && lines[i].includes("Handlers=") && 
+                !currentKeyboardName.includes("Consumer Control") && 
+                !currentKeyboardName.includes("System Control")) {
                 const match = lines[i].match(/event(\d+)/);
                 if (match) {
-                    eventId = match[1];
-                    break;
+                    eventIds.push({ id: match[1], name: currentKeyboardName });
+                    console.log(`Added event ID ${match[1]} for ${currentKeyboardName}`);
                 }
             }
             if (lines[i] === "") {
                 foundKeyboard = false;
+                currentKeyboardName = "";
             }
         }
 
-        if (eventId !== null) {
-            const devicePath = `/dev/input/event${eventId}`;
-            console.log(`Found Logitech keyboard at ${devicePath}`);
-            return devicePath;
+        if (eventIds.length > 0) {
+            const devicePaths = eventIds.map(({ id, name }) => ({
+                path: `/dev/input/event${id}`,
+                name: name
+            }));
+            console.log("Found keyboard devices:", devicePaths);
+            return devicePaths;
         } else {
-            console.error("No Logitech keyboard found in device list");
+            console.error("No compatible keyboards found in device list");
         }
     } catch (error) {
-        console.error("Error finding keyboard:", error);
+        console.error("Error finding keyboards:", error);
     }
-    return null;
+    return [];
 }
 
-function initializeKeyboard() {
-    const keyboardDevice = findKeyboardDevice();
-    if (!keyboardDevice) {
-        console.error("Could not find Logitech keyboard!");
+function initializeKeyboards() {
+    const keyboardDevices = findKeyboardDevices();
+    if (keyboardDevices.length === 0) {
+        console.error("Could not find any compatible keyboards!");
         process.exit(1);
     }
 
     try {
-        input = new InputEvent(keyboardDevice);
-        keyboard = new InputEvent.Keyboard(input);
-        console.log("Successfully initialized keyboard input");
-
-        keyboard.on('error', (error) => {
-            console.error('Keyboard error:', error);
-        });
-
-        keyboard.on('keypress', (event) => {
+        // Initialize each keyboard
+        keyboardDevices.forEach((device, index) => {
             try {
-                if (event.code === 28) {
-                    // Check WebSocket connection state and attempt to reconnect if needed
-                    if (!ws || ws.readyState !== WebSocket.OPEN) {
-                        console.log('WebSocket not connected. Attempting to reconnect...');
-                        connectToPrimary();
-                        return;
-                    }
+                const input = new InputEvent(device.path);
+                const keyboard = new InputEvent.Keyboard(input);
+                inputs.push(input);
+                keyboards.push(keyboard);
+                console.log(`Successfully initialized keyboard ${index + 1}: ${device.name} at ${device.path}`);
 
-                    if (event.value === 1) {
-                        buttonState.pressed = true;
-                        buttonState.pressTime = Date.now();
-                        console.log("Button PRESSED DOWN at", new Date().toISOString());
-                    } else {
-                        buttonState.pressed = false;
-                        console.log("Button RELEASED after", Date.now() - buttonState.pressTime, "ms");
-                        buttonState.pressTime = null;
-                    }
+                keyboard.on('error', (error) => {
+                    console.error(`Keyboard ${index + 1} (${device.name}) error:`, error);
+                });
 
+                keyboard.on('keypress', (event) => {
                     try {
-                        if (ws && ws.readyState === WebSocket.OPEN) {
-                            ws.send(JSON.stringify({ buttonPressed: buttonState.pressed }));
+                        console.log(`Keyboard ${index + 1} (${device.name}) key event:`, {
+                            code: event.code,
+                            value: event.value,
+                            type: getKeyName(event.code)
+                        });
+
+                        // Handle Enter key (code 28)
+                        if (event.code === 28) {
+                            handleEnterKey(event, device.name);
                         }
-                    } catch (wsError) {
-                        console.error('Error sending WebSocket message:', wsError);
-                        // Try to reconnect on send failure
-                        connectToPrimary();
+                    } catch (error) {
+                        console.error(`Error handling keypress on ${device.name}:`, error);
                     }
-                    
-                    console.log("Current button state:", JSON.stringify(buttonState, null, 2));
-                }
+                });
             } catch (error) {
-                console.error('Error in keypress handler:', error);
+                console.error(`Error initializing keyboard at ${device.path}:`, error);
             }
         });
+
+        if (keyboards.length === 0) {
+            console.error("Failed to initialize any keyboards!");
+            process.exit(1);
+        }
+
     } catch (error) {
-        console.error("Error initializing keyboard:", error);
+        console.error("Error in keyboard initialization:", error);
         process.exit(1);
     }
+}
+
+// Helper function to get key names
+function getKeyName(code) {
+    const keyMap = {
+        28: 'ENTER'
+    };
+    return keyMap[code] || `Unknown (${code})`;
+}
+
+// Helper function to handle Enter key press/release
+function handleEnterKey(event, keyboardName) {
+    // Check WebSocket connection state and attempt to reconnect if needed
+    if (!ws || ws.readyState !== WebSocket.OPEN) {
+        console.log('WebSocket not connected. Attempting to reconnect...');
+        connectToPrimary();
+        return;
+    }
+
+    if (event.value === 1) { // Key pressed down
+        buttonState.pressed = true;
+        buttonState.pressTime = Date.now();
+        console.log(`Secondary button PRESSED DOWN on ${keyboardName} at`, new Date().toISOString());
+
+        try {
+            ws.send(JSON.stringify({ buttonPressed: true }));
+        } catch (wsError) {
+            console.error('Error sending WebSocket message:', wsError);
+            connectToPrimary();
+        }
+
+        // Set timeout to reset button state after 1 second
+        setTimeout(() => {
+            if (buttonState.pressed && Date.now() - buttonState.pressTime > 1000) {
+                buttonState.pressed = false;
+                buttonState.pressTime = null;
+                console.log(`Reset secondary button state due to timeout on ${keyboardName}`);
+                try {
+                    ws.send(JSON.stringify({ buttonPressed: false }));
+                } catch (wsError) {
+                    console.error('Error sending WebSocket message:', wsError);
+                    connectToPrimary();
+                }
+            }
+        }, 1000);
+    } else { // Key released
+        buttonState.pressed = false;
+        console.log(`Secondary button RELEASED on ${keyboardName} after`, 
+            Date.now() - buttonState.pressTime, "ms");
+        buttonState.pressTime = null;
+
+        try {
+            ws.send(JSON.stringify({ buttonPressed: false }));
+        } catch (wsError) {
+            console.error('Error sending WebSocket message:', wsError);
+            connectToPrimary();
+        }
+    }
+    
+    // Log current state
+    console.log("Current button state:", JSON.stringify(buttonState, null, 2));
 }
 
 // Function to connect to primary Pi
@@ -188,6 +255,6 @@ function connectToPrimary() {
 // Initialize everything
 console.log("Secondary Pi client starting up...");
 console.log("Start time:", new Date().toISOString());
-initializeKeyboard();
+initializeKeyboards();
 connectToPrimary();
 console.log("Secondary Pi client started"); 

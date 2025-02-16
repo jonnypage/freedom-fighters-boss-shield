@@ -35,19 +35,41 @@ function broadcastState() {
         [ShieldState.POWER_OFF]: 'off'
     };
 
+    // Calculate combined primary button state
+    const anyPrimaryPressed = primaryModule.primaryButtonStates.some(state => state.pressed);
+    const firstPressedTime = primaryModule.primaryButtonStates.find(state => state.pressed)?.pressTime || null;
+
+    // Create detailed state object
     const state = {
-        primaryButton: {...primaryModule.primaryButtonState},
+        primaryButton: { 
+            pressed: anyPrimaryPressed, 
+            pressTime: firstPressedTime,
+            // Add detailed states for debugging
+            details: primaryModule.primaryButtonStates.map(state => ({
+                name: state.name,
+                pressed: state.pressed,
+                pressTime: state.pressTime
+            }))
+        },
         secondaryButton: {...primaryModule.secondaryButtonState},
         shieldStatus: stateToStatus[primaryModule.state.shieldState],
         isRegenerating: primaryModule.state.shieldState === ShieldState.REGENERATING,
         currentState: primaryModule.state.shieldState
     };
 
+    // Broadcast to all connected clients
     wss.clients.forEach(client => {
         if (client.readyState === WebSocket.OPEN) {
-            client.send(JSON.stringify(state));
+            try {
+                client.send(JSON.stringify(state));
+            } catch (error) {
+                console.error('Error sending state to client:', error);
+            }
         }
     });
+
+    // Debug log the broadcast
+    console.log('Broadcasting state:', JSON.stringify(state, null, 2));
 }
 
 // API Endpoints
@@ -66,9 +88,13 @@ app.get('/api/status', (req, res) => {
         [ShieldState.POWER_OFF]: 'off'
     };
     
+    // Calculate combined primary button state
+    const anyPrimaryPressed = primaryModule.primaryButtonStates.some(state => state.pressed);
+    const firstPressedTime = primaryModule.primaryButtonStates.find(state => state.pressed)?.pressTime || null;
+    
     // Cache the response to prevent race conditions
     const response = {
-        primaryButton: {...primaryModule.primaryButtonState},
+        primaryButton: { pressed: anyPrimaryPressed, pressTime: firstPressedTime },
         secondaryButton: {...primaryModule.secondaryButtonState},
         shieldStatus: stateToStatus[primaryModule.state.shieldState],
         isRegenerating: primaryModule.state.shieldState === ShieldState.REGENERATING,
@@ -84,14 +110,13 @@ app.post('/api/trigger', async (req, res) => {
     }
 
     try {
-        // Simulate both buttons being pressed
-        primaryModule.primaryButtonState.pressed = true;
-        primaryModule.primaryButtonState.pressTime = Date.now();
-        primaryModule.secondaryButtonState.pressed = true;
-        primaryModule.secondaryButtonState.pressTime = Date.now();
+        // Set shield state to shattering first
+        primaryModule.state.shieldState = ShieldState.SHATTERING;
+        broadcastState();
 
         // Trigger the lights effect
         await primaryModule.triggerLights();
+        
         res.json({ success: true });
     } catch (error) {
         console.error('Error triggering lights:', error);
@@ -99,22 +124,16 @@ app.post('/api/trigger', async (req, res) => {
     }
 });
 
-app.post('/api/reset', (req, res) => {
+app.post('/api/reset', async (req, res) => {
     if (!primaryModule) {
         return res.status(500).json({ error: 'Primary module not initialized' });
     }
 
     try {
-        // Reset all states
-        primaryModule.primaryButtonState.pressed = false;
-        primaryModule.primaryButtonState.pressTime = null;
-        primaryModule.secondaryButtonState.pressed = false;
-        primaryModule.secondaryButtonState.pressTime = null;
-        primaryModule.state.shieldState = ShieldState.ACTIVE;
-
-        // Turn the lights back on with preset 1
-        primaryModule.controlWLED(true, { preset: 1 });
+        // Call the reset handler which now properly manages timers and state
+        await primaryModule.handleReset();
         
+        // Send success response
         res.json({ success: true });
     } catch (error) {
         console.error('Error resetting system:', error);
@@ -130,13 +149,21 @@ app.post('/api/boss-death', async (req, res) => {
     try {
         // Set state to boss dead
         primaryModule.state.shieldState = ShieldState.BOSS_DEAD;
-        primaryModule.primaryButtonState.pressed = false;
-        primaryModule.primaryButtonState.pressTime = null;
+        primaryModule.primaryButtonStates.forEach(state => {
+            state.pressed = false;
+            state.pressTime = null;
+        });
         primaryModule.secondaryButtonState.pressed = false;
         primaryModule.secondaryButtonState.pressTime = null;
         
+        // Broadcast state change
+        broadcastState();
+        
         // Activate boss death preset
         await primaryModule.controlWLED(true, { preset: 2 });
+        
+        // Broadcast final state
+        broadcastState();
         res.json({ success: true });
     } catch (error) {
         console.error('Error in boss death sequence:', error);
@@ -152,13 +179,21 @@ app.post('/api/power-down', async (req, res) => {
     try {
         // Set state to power off
         primaryModule.state.shieldState = ShieldState.POWER_OFF;
-        primaryModule.primaryButtonState.pressed = false;
-        primaryModule.primaryButtonState.pressTime = null;
+        primaryModule.primaryButtonStates.forEach(state => {
+            state.pressed = false;
+            state.pressTime = null;
+        });
         primaryModule.secondaryButtonState.pressed = false;
         primaryModule.secondaryButtonState.pressTime = null;
         
+        // Broadcast state change
+        broadcastState();
+        
         // Power down shield
         await primaryModule.controlWLED(false);
+        
+        // Broadcast final state
+        broadcastState();
         res.json({ success: true });
     } catch (error) {
         console.error('Error powering down shield:', error);
@@ -170,21 +205,60 @@ app.post('/api/power-down', async (req, res) => {
 function initialize(primaryModuleRef) {
     primaryModule = primaryModuleRef;
     
-    // Set up WebSocket server for real-time updates
-    wss = new WebSocket.Server({ port: 3001 });
-    
-    wss.on('connection', (ws) => {
-        console.log('Web client connected');
-        // Send initial state
-        broadcastState();
-    });
-
-    // Watch for state changes
-    const stateInterval = setInterval(broadcastState, 100);
-
+    // First start the HTTP server
     app.listen(port, '0.0.0.0', () => {
         console.log(`Web interface running at http://0.0.0.0:${port}`);
+        
+        // Then set up WebSocket server after HTTP server is running
+        wss = new WebSocket.Server({ port: 3001 });
+        
+        wss.on('connection', (ws) => {
+            console.log('Web client connected');
+            // Ensure primaryModule is initialized before broadcasting
+            if (primaryModule) {
+                // Force an immediate state broadcast to the new client
+                try {
+                    const stateToStatus = {
+                        [ShieldState.ACTIVE]: 'on',
+                        [ShieldState.SHATTERING]: 'shattering',
+                        [ShieldState.BROKEN]: 'broken',
+                        [ShieldState.REGENERATING]: 'regenerating',
+                        [ShieldState.BOSS_DEAD]: 'boss-dead',
+                        [ShieldState.POWER_OFF]: 'off'
+                    };
+
+                    const anyPrimaryPressed = primaryModule.primaryButtonStates.some(state => state.pressed);
+                    const firstPressedTime = primaryModule.primaryButtonStates.find(state => state.pressed)?.pressTime || null;
+
+                    const state = {
+                        primaryButton: { 
+                            pressed: anyPrimaryPressed, 
+                            pressTime: firstPressedTime,
+                            details: primaryModule.primaryButtonStates.map(state => ({
+                                name: state.name,
+                                pressed: state.pressed,
+                                pressTime: state.pressTime
+                            }))
+                        },
+                        secondaryButton: {...primaryModule.secondaryButtonState},
+                        shieldStatus: stateToStatus[primaryModule.state.shieldState],
+                        isRegenerating: primaryModule.state.shieldState === ShieldState.REGENERATING,
+                        currentState: primaryModule.state.shieldState
+                    };
+
+                    ws.send(JSON.stringify(state));
+                    console.log('Sent initial state to new client:', state);
+                } catch (error) {
+                    console.error('Error sending initial state to client:', error);
+                }
+            } else {
+                console.error('Primary module not initialized when client connected');
+            }
+        });
+
         console.log('WebSocket server running on port 3001');
+        // Broadcast initial state to any existing clients
+        broadcastState();
     });
 }
 
