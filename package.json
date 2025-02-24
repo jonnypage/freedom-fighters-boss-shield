@@ -1,0 +1,17 @@
+{
+  "name": "dual-button-wled-control",
+  "version": "1.0.0",
+  "description": "Dual button control system for WLED using Raspberry Pis",
+  "main": "primary.js",
+  "scripts": {
+    "start-primary": "node primary.js",
+    "start-secondary": "node secondary.js"
+  },
+  "dependencies": {
+    "ws": "^8.13.0",
+    "input-event": "^1.2.6",
+    "express": "^4.18.2",
+    "node-fetch": "^2.7.0",
+    "play-sound": "^1.1.6"
+  }
+} 

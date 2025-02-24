@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
+    <title>Boss Shield - Presentation View</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body {
+            background-color: #000;
+            color: #fff;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+            font-family: 'Arial', sans-serif;
+            transition: background-color 1s ease;
+        }
+
+        body.boss-defeated {
+            background-color: white;
+        }
+
+        .shield-status {
+            font-size: 5em;
+            text-align: center;
+            margin-bottom: 30px;
+            font-weight: bold;
+            text-transform: uppercase;
+            transition: all 0.3s ease;
+            white-space: pre-line;
+            line-height: 1.2;
+        }
+
+        .shield-active {
+            color: #ff0055;
+            text-shadow: 0 0 20px #ff0055;
+            animation: pulse 2s infinite;
+        }
+
+        .shield-broken {
+            color: #00ff00;
+            text-shadow: 0 0 20px #00ff00;
+        }
+
+        .shield-shattering {
+            color: #ffc107;
+            text-shadow: 0 0 20px #ffc107;
+            animation: shake 0.5s infinite;
+        }
+
+        .shield-regenerating {
+            color: #ff00ff;
+            text-shadow: 0 0 20px #ff00ff;
+            animation: glow 1s infinite;
+        }
+
+        .shield-boss-dead {
+            color: #0088ff;
+            text-shadow: 0 0 20px #0088ff;
+            animation: victoryPulse 2s infinite;
+            padding: 30px;
+            border-radius: 15px;
+        }
+
+        .shield-off {
+            color: #666666;
+            text-shadow: 0 0 10px #666666;
+        }
+
+        .countdown-container {
+            position: relative;
+            width: 400px;
+            height: 400px;
+            margin: 0 auto;
+            display: none;
+            padding: 40px;
+        }
+
+        .countdown-ring {
+            position: absolute;
+            top: 40px;
+            left: 40px;
+            width: calc(100% - 80px);
+            height: calc(100% - 80px);
+        }
+
+        .countdown-circle {
+            fill: none;
+            stroke: #00ff00;
+            stroke-width: 8;
+            stroke-linecap: round;
+            transform: rotate(-90deg);
+            transform-origin: 50% 50%;
+            transition: stroke-dashoffset 1s linear;
+            filter: drop-shadow(0 0 5px #00ff00);
+        }
+
+        .countdown-text {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 6em;
+            font-weight: bold;
+            color: #00ff00;
+            text-shadow: 0 0 10px #00ff00;
+        }
+
+        @keyframes pulse {
+            0% { text-shadow: 0 0 20px #ff0055; }
+            50% { text-shadow: 0 0 40px #ff0055; }
+            100% { text-shadow: 0 0 20px #ff0055; }
+        }
+
+        @keyframes shake {
+            0%, 100% { transform: translateX(0); }
+            25% { transform: translateX(-10px); }
+            75% { transform: translateX(10px); }
+        }
+
+        @keyframes glow {
+            0% { text-shadow: 0 0 20px #ff00ff; }
+            50% { text-shadow: 0 0 40px #ff00ff; }
+            100% { text-shadow: 0 0 20px #ff00ff; }
+        }
+
+        @keyframes victoryPulse {
+            0% { 
+                opacity: 1;
+                text-shadow: 0 0 20px #0088ff;
+            }
+            50% { 
+                opacity: 0.8;
+                text-shadow: 0 0 40px #0088ff;
+            }
+            100% { 
+                opacity: 1;
+                text-shadow: 0 0 20px #0088ff;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="shield-status" id="shieldStatus">
+            SHIELD ACTIVE
+        </div>
+        
+        <div class="countdown-container" id="countdownContainer">
+            <svg class="countdown-ring" viewBox="0 0 100 100">
+                <circle class="countdown-circle" cx="50" cy="50" r="40"/>
+            </svg>
+            <div class="countdown-text" id="countdownText">12</div>
+        </div>
+    </div>
+
+    <script>
+        const ShieldState = {
+            ACTIVE: 'ACTIVE',
+            SHATTERING: 'SHATTERING',
+            BROKEN: 'BROKEN',
+            REGENERATING: 'REGENERATING',
+            BOSS_DEAD: 'BOSS_DEAD',
+            POWER_OFF: 'POWER_OFF'
+        };
+
+        const stateConfig = {
+            [ShieldState.ACTIVE]: {
+                text: 'SHIELD ACTIVE',
+                className: 'shield-status shield-active'
+            },
+            [ShieldState.BROKEN]: {
+                text: 'SHIELD BROKEN',
+                className: 'shield-status shield-broken'
+            },
+            [ShieldState.REGENERATING]: {
+                text: 'SHIELD REGENERATING',
+                className: 'shield-status shield-regenerating'
+            },
+            [ShieldState.BOSS_DEAD]: {
+                text: 'YOU HAVE DEFEATED SPECTER NOVA\nMISSION SUCCESSFUL',
+                className: 'shield-status shield-boss-dead'
+            },
+            [ShieldState.POWER_OFF]: {
+                text: 'SHIELD OFFLINE',
+                className: 'shield-status shield-off'
+            }
+        };
+
+        let ws = null;
+        let lastState = null;
+        let countdownTimer = null;
+        const SHIELD_DOWN_TIME = 15000;
+        const REGEN_START_TIME = SHIELD_DOWN_TIME * 0.8;
+        const circle = document.querySelector('.countdown-circle');
+        const circumference = 2 * Math.PI * 40; // r = 40
+        circle.style.strokeDasharray = `${circumference} ${circumference}`;
+        circle.style.strokeDashoffset = circumference;
+
+        function setProgress(percent) {
+            const offset = circumference - (percent * circumference);
+            circle.style.strokeDashoffset = offset;
+        }
+
+        function connectWebSocket() {
+            ws = new WebSocket(`ws://${window.location.hostname}:3001`);
+            
+            ws.onopen = () => {
+                console.log('Connected to WebSocket server');
+            };
+            
+            ws.onclose = () => {
+                console.log('WebSocket connection closed, attempting to reconnect...');
+                setTimeout(connectWebSocket, 5000);
+            };
+            
+            ws.onerror = (error) => {
+                console.error('WebSocket error:', error);
+            };
+            
+            ws.onmessage = (event) => {
+                const data = JSON.parse(event.data);
+                updateUI(data);
+            };
+        }
+
+        function updateUI(data) {
+            const shieldStatus = document.getElementById('shieldStatus');
+            const countdownContainer = document.getElementById('countdownContainer');
+            const currentConfig = stateConfig[data.currentState];
+            
+            if (currentConfig && lastState !== data.currentState) {
+                shieldStatus.className = 'shield-status';
+                shieldStatus.textContent = currentConfig.text;
+                
+                // Update body class for boss defeat state
+                if (data.currentState === ShieldState.BOSS_DEAD) {
+                    document.body.classList.add('boss-defeated');
+                } else {
+                    document.body.classList.remove('boss-defeated');
+                }
+                
+                requestAnimationFrame(() => {
+                    requestAnimationFrame(() => {
+                        shieldStatus.className = currentConfig.className;
+                    });
+                });
+
+                if (data.currentState === ShieldState.BROKEN) {
+                    countdownContainer.style.display = 'block';
+                    if (!countdownTimer) {
+                        const startTime = Date.now();
+                        updateCountdown(startTime);
+                        countdownTimer = setInterval(() => updateCountdown(startTime), 1000);
+                    }
+                } else {
+                    countdownContainer.style.display = 'none';
+                    if (countdownTimer) {
+                        clearInterval(countdownTimer);
+                        countdownTimer = null;
+                    }
+                }
+                
+                lastState = data.currentState;
+            }
+        }
+
+        function updateCountdown(startTime) {
+            const now = Date.now();
+            const elapsed = now - startTime;
+            const remainingBeforeRegen = REGEN_START_TIME - elapsed;
+            
+            if (remainingBeforeRegen <= 0) {
+                document.getElementById('countdownContainer').style.display = 'none';
+                if (countdownTimer) {
+                    clearInterval(countdownTimer);
+                    countdownTimer = null;
+                }
+                return;
+            }
+
+            const seconds = Math.ceil(remainingBeforeRegen / 1000);
+            document.getElementById('countdownText').textContent = seconds;
+            
+            // Update the circle progress
+            const progress = remainingBeforeRegen / REGEN_START_TIME;
+            setProgress(progress);
+        }
+
+        // Initialize WebSocket connection
+        connectWebSocket();
+
+        // Handle fullscreen
+        document.addEventListener('click', () => {
+            if (!document.fullscreenElement) {
+                document.documentElement.requestFullscreen();
+            }
+        });
+    </script>
+</body>
+</html> 
