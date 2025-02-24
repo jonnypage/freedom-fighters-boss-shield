@@ -1,423 +1,541 @@
 <!DOCTYPE html>
 <html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
-    <meta http-equiv="Pragma" content="no-cache">
-    <meta http-equiv="Expires" content="0">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      http-equiv="Cache-Control"
+      content="no-cache, no-store, must-revalidate"
+    />
+    <meta http-equiv="Pragma" content="no-cache" />
+    <meta http-equiv="Expires" content="0" />
     <title>Freedom Fighters: Boss Shield Control</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link
+      href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css"
+      rel="stylesheet"
+    />
+    <link
+      href="https://gitcdn.github.io/bootstrap-toggle/2.2.2/css/bootstrap-toggle.min.css"
+      rel="stylesheet"
+    />
     <style>
-        body {
-            background-color: #1a1a1a;
-            color: #ffffff;
+      body {
+        background-color: #1a1a1a;
+        color: #ffffff;
+      }
+      .shield-status {
+        font-size: 2em;
+        padding: 20px;
+        border-radius: 10px;
+        margin: 20px 0;
+        text-align: center;
+        transition: all 0.3s ease;
+      }
+      .shield-on {
+        background-color: #dc3545;
+        animation: pulse 2s infinite;
+      }
+      .shield-broken {
+        background-color: #198754;
+      }
+      .shield-shattering {
+        background-color: #ffc107;
+        animation: shake 0.5s infinite;
+      }
+      .shield-regenerating {
+        background-color: #dc3545;
+        animation: glow 1s infinite;
+      }
+      .shield-boss-dead {
+        background-color: #6f42c1;
+        animation: fade 2s infinite;
+      }
+      .shield-off {
+        background-color: #343a40;
+      }
+      .control-button {
+        width: 200px;
+        height: 60px;
+        margin: 10px;
+        font-size: 1.2em;
+      }
+      @keyframes pulse {
+        0% {
+          box-shadow: 0 0 0 0 rgba(220, 53, 69, 0.7);
         }
-        .shield-status {
-            font-size: 2em;
-            padding: 20px;
-            border-radius: 10px;
-            margin: 20px 0;
-            text-align: center;
-            transition: all 0.3s ease;
+        70% {
+          box-shadow: 0 0 0 10px rgba(220, 53, 69, 0);
         }
-        .shield-on {
-            background-color: #dc3545;
-            animation: pulse 2s infinite;
+        100% {
+          box-shadow: 0 0 0 0 rgba(220, 53, 69, 0);
         }
-        .shield-broken {
-            background-color: #198754;
+      }
+      @keyframes shake {
+        0%,
+        100% {
+          transform: translateX(0);
         }
-        .shield-shattering {
-            background-color: #ffc107;
-            animation: shake 0.5s infinite;
+        25% {
+          transform: translateX(-5px);
         }
-        .shield-regenerating {
-            background-color: #dc3545;
-            animation: glow 1s infinite;
+        75% {
+          transform: translateX(5px);
         }
-        .shield-boss-dead {
-            background-color: #6f42c1;
-            animation: fade 2s infinite;
+      }
+      @keyframes glow {
+        0% {
+          filter: brightness(1);
         }
-        .shield-off {
-            background-color: #343a40;
+        50% {
+          filter: brightness(1.3);
         }
-        .control-button {
-            width: 200px;
-            height: 60px;
-            margin: 10px;
-            font-size: 1.2em;
+        100% {
+          filter: brightness(1);
         }
-        @keyframes pulse {
-            0% {
-                box-shadow: 0 0 0 0 rgba(220, 53, 69, 0.7);
-            }
-            70% {
-                box-shadow: 0 0 0 10px rgba(220, 53, 69, 0);
-            }
-            100% {
-                box-shadow: 0 0 0 0 rgba(220, 53, 69, 0);
-            }
+      }
+      @keyframes fade {
+        0% {
+          opacity: 1;
         }
-        @keyframes shake {
-            0%, 100% { transform: translateX(0); }
-            25% { transform: translateX(-5px); }
-            75% { transform: translateX(5px); }
+        50% {
+          opacity: 0.5;
         }
-        @keyframes glow {
-            0% { filter: brightness(1); }
-            50% { filter: brightness(1.3); }
-            100% { filter: brightness(1); }
+        100% {
+          opacity: 1;
         }
-        @keyframes fade {
-            0% { opacity: 1; }
-            50% { opacity: 0.5; }
-            100% { opacity: 1; }
-        }
-        .button-status {
-            padding: 10px;
-            border-radius: 5px;
-            margin: 5px;
-            display: inline-block;
-        }
-        .pressed {
-            background-color: #198754;
-        }
-        .not-pressed {
-            background-color: #6c757d;
-        }
-        .countdown {
-            font-size: 1.5em;
-            color: #ffc107;
-            margin: 10px 0;
-            text-align: center;
-            visibility: hidden;
-            height: 2.5em;  /* Fixed height to maintain space */
-        }
-        .countdown.visible {
-            visibility: visible;
-        }
-        .boss-death-button {
-            width: 300px;
-            height: 80px;
-            margin-top: 30px;
-            font-size: 1.5em;
-            background-color: #8bb8e8;
-            border-color: #5c9ee3;
-            color: #1a365d;
-            font-weight: 600;
-        }
-        .boss-death-button:hover {
-            background-color: #5c9ee3;
-            border-color: #4a8cd1;
-            color: #1a365d;
-        }
-        .alert {
-            background-color: #2a2a2a;
-            border: 1px solid #3a3a3a;
-            color: #e0e0e0;
-        }
-        .alert-danger {
-            background-color: #2a2020;
-            border-color: #3a2525;
-            color: #ffb0b0;
-        }
-        .alert-info {
-            background-color: #202a2a;
-            border-color: #253a3a;
-            color: #b0e0e0;
-        }
-        .version-counter {
-            position: fixed;
-            bottom: 10px;
-            right: 10px;
-            font-size: 0.8em;
-            color: #666;
-            font-family: monospace;
-        }
+      }
+      .button-status {
+        padding: 10px;
+        border-radius: 5px;
+        margin: 5px;
+        display: inline-block;
+      }
+      .pressed {
+        background-color: #198754;
+      }
+      .not-pressed {
+        background-color: #6c757d;
+      }
+      .countdown {
+        font-size: 1.5em;
+        color: #ffc107;
+        margin: 10px 0;
+        text-align: center;
+        visibility: hidden;
+        height: 2.5em; /* Fixed height to maintain space */
+      }
+      .countdown.visible {
+        visibility: visible;
+      }
+      .boss-death-button {
+        width: 300px;
+        height: 80px;
+        margin-top: 30px;
+        font-size: 1.5em;
+        background-color: #8bb8e8;
+        border-color: #5c9ee3;
+        color: #1a365d;
+        font-weight: 600;
+      }
+      .boss-death-button:hover {
+        background-color: #5c9ee3;
+        border-color: #4a8cd1;
+        color: #1a365d;
+      }
+      .alert {
+        background-color: #2a2a2a;
+        border: 1px solid #3a3a3a;
+        color: #e0e0e0;
+      }
+      .alert-danger {
+        background-color: #2a2020;
+        border-color: #3a2525;
+        color: #ffb0b0;
+      }
+      .alert-info {
+        background-color: #202a2a;
+        border-color: #253a3a;
+        color: #b0e0e0;
+      }
+      .version-counter {
+        position: fixed;
+        bottom: 10px;
+        right: 10px;
+        font-size: 0.8em;
+        color: #666;
+        font-family: monospace;
+      }
+      .difficulty-toggle {
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        z-index: 1000;
+        padding: 8px 16px;
+        font-size: 0.9em;
+        border-radius: 20px;
+        transition: all 0.3s ease;
+      }
+      .form-check.form-switch {
+        padding-left: 0;
+      }
+      .form-switch .form-check-input {
+        height: 1.5rem;
+        width: 3rem;
+        cursor: pointer;
+      }
+      .form-check-label {
+        padding-right: 3.5rem;
+        cursor: pointer;
+        color: #ffc107;
+      }
+      .form-check-input:checked {
+        background-color: #dc3545;
+        border-color: #dc3545;
+      }
     </style>
-</head>
-<body>
+  </head>
+  <body>
     <div class="container mt-5">
-        <h1 class="text-center mb-4">Freedom Fighters: Boss Shield Control</h1>
-        
-        <div class="shield-status" id="shieldStatus">
-            Shield Status: Loading...
-        </div>
+      <button class="btn btn-warning difficulty-toggle" id="difficultyButton">
+        Normal Mode
+      </button>
+      <h1 class="text-center mb-4">Freedom Fighters: Boss Shield Control</h1>
 
-        <div class="countdown" id="countdown">
-            Regeneration in: <span id="countdownTime">--:--</span>
-        </div>
+      <div class="shield-status" id="shieldStatus">
+        Shield Status: Loading...
+      </div>
 
-        <div class="text-center mb-4">
-            <div class="button-status" id="primaryStatus">
-                Primary Button: Unknown
-            </div>
-            <div class="button-status" id="secondaryStatus">
-                Secondary Button: Unknown
-            </div>
-        </div>
+      <div class="countdown" id="countdown">
+        Regeneration in: <span id="countdownTime">--:--</span>
+      </div>
 
-        <div class="d-flex justify-content-center">
-            <button class="btn btn-danger control-button" id="triggerButton">
-                Trigger Shield Break
-            </button>
-            <button class="btn btn-success control-button" id="resetButton">
-                Reset System
-            </button>
-            <button class="btn btn-dark control-button" id="lightsOffButton">
-                Power Down Shield
-            </button>
+      <div class="text-center mb-4">
+        <div class="button-status" id="primaryStatus">
+          Primary Button: Unknown
         </div>
+        <div class="button-status" id="secondaryStatus">
+          Secondary Button: Unknown
+        </div>
+      </div>
 
-        <div class="d-flex justify-content-center">
-            <button class="btn btn-primary boss-death-button" id="bossDeathButton">
-                Boss Death Sequence
-            </button>
-        </div>
+      <div class="d-flex justify-content-center">
+        <button class="btn btn-danger control-button" id="triggerButton">
+          Trigger Shield Break
+        </button>
+        <button class="btn btn-success control-button" id="resetButton">
+          Reset System
+        </button>
+        <button class="btn btn-dark control-button" id="lightsOffButton">
+          Power Down Shield
+        </button>
+      </div>
 
-        <div class="mt-4" id="statusMessages">
-        </div>
+      <div class="d-flex justify-content-center mt-3">
+        <button class="btn btn-primary boss-death-button" id="bossDeathButton">
+          Boss Death Sequence
+        </button>
+      </div>
+
+      <div class="mt-4" id="statusMessages"></div>
     </div>
-    <div class="version-counter">v6</div>
+    <div class="version-counter">v7</div>
 
+    <script src="https://gitcdn.github.io/bootstrap-toggle/2.2.2/js/bootstrap-toggle.min.js"></script>
     <script>
-        // Define shield states enum to match backend
-        const ShieldState = {
-            ACTIVE: 'ACTIVE',
-            SHATTERING: 'SHATTERING',
-            BROKEN: 'BROKEN',
-            REGENERATING: 'REGENERATING',
-            BOSS_DEAD: 'BOSS_DEAD',
-            POWER_OFF: 'POWER_OFF'
+      // Define shield states enum to match backend
+      const ShieldState = {
+        ACTIVE: 'ACTIVE',
+        SHATTERING: 'SHATTERING',
+        BROKEN: 'BROKEN',
+        REGENERATING: 'REGENERATING',
+        BOSS_DEAD: 'BOSS_DEAD',
+        POWER_OFF: 'POWER_OFF',
+      };
+
+      // Map shield states to display text and classes
+      const stateConfig = {
+        [ShieldState.ACTIVE]: {
+          text: 'SHIELD ACTIVE',
+          className: 'shield-status shield-on',
+        },
+        [ShieldState.SHATTERING]: {
+          text: 'SHIELD SHATTERING',
+          className: 'shield-status shield-shattering',
+        },
+        [ShieldState.BROKEN]: {
+          text: 'SHIELD BROKEN',
+          className: 'shield-status shield-broken',
+        },
+        [ShieldState.REGENERATING]: {
+          text: 'SHIELD REGENERATING',
+          className: 'shield-status shield-regenerating',
+        },
+        [ShieldState.BOSS_DEAD]: {
+          text: 'BOSS DEFEATED',
+          className: 'shield-status shield-boss-dead',
+        },
+        [ShieldState.POWER_OFF]: {
+          text: 'SHIELD OFFLINE',
+          className: 'shield-status shield-off',
+        },
+      };
+
+      let ws = null;
+      let lastState = null;
+      let countdownTimer = null;
+      let isTransitioning = false;
+      const SHIELD_DOWN_TIME = 15000;
+      const REGEN_START_TIME = SHIELD_DOWN_TIME * 0.8;
+
+      function connectWebSocket() {
+        ws = new WebSocket(`ws://${window.location.hostname}:3001`);
+
+        ws.onopen = () => {
+          console.log('Connected to WebSocket server');
+          addStatusMessage('Connected to server');
         };
 
-        // Map shield states to display text and classes
-        const stateConfig = {
-            [ShieldState.ACTIVE]: {
-                text: 'SHIELD ACTIVE',
-                className: 'shield-status shield-on'
-            },
-            [ShieldState.SHATTERING]: {
-                text: 'SHIELD SHATTERING',
-                className: 'shield-status shield-shattering'
-            },
-            [ShieldState.BROKEN]: {
-                text: 'SHIELD BROKEN',
-                className: 'shield-status shield-broken'
-            },
-            [ShieldState.REGENERATING]: {
-                text: 'SHIELD REGENERATING',
-                className: 'shield-status shield-regenerating'
-            },
-            [ShieldState.BOSS_DEAD]: {
-                text: 'BOSS DEFEATED',
-                className: 'shield-status shield-boss-dead'
-            },
-            [ShieldState.POWER_OFF]: {
-                text: 'SHIELD OFFLINE',
-                className: 'shield-status shield-off'
-            }
+        ws.onclose = () => {
+          console.log(
+            'WebSocket connection closed, attempting to reconnect...',
+          );
+          addStatusMessage('Connection lost, attempting to reconnect...', true);
+          setTimeout(connectWebSocket, 5000);
         };
 
-        let ws = null;
-        let lastState = null;
-        let countdownTimer = null;
-        let isTransitioning = false;
-        const SHIELD_DOWN_TIME = 15000;
-        const REGEN_START_TIME = SHIELD_DOWN_TIME * 0.8;
+        ws.onerror = (error) => {
+          console.error('WebSocket error:', error);
+          addStatusMessage('Connection error', true);
+        };
 
-        function connectWebSocket() {
-            ws = new WebSocket(`ws://${window.location.hostname}:3001`);
-            
-            ws.onopen = () => {
-                console.log('Connected to WebSocket server');
-                addStatusMessage('Connected to server');
-            };
-            
-            ws.onclose = () => {
-                console.log('WebSocket connection closed, attempting to reconnect...');
-                addStatusMessage('Connection lost, attempting to reconnect...', true);
-                setTimeout(connectWebSocket, 5000);
-            };
-            
-            ws.onerror = (error) => {
-                console.error('WebSocket error:', error);
-                addStatusMessage('Connection error', true);
-            };
-            
-            ws.onmessage = (event) => {
-                const data = JSON.parse(event.data);
-                updateUI(data);
-            };
+        ws.onmessage = (event) => {
+          const data = JSON.parse(event.data);
+          updateUI(data);
+        };
+      }
+
+      function updateUI(data) {
+        // Update button states
+        const primaryStatus = document.getElementById('primaryStatus');
+        const secondaryStatus = document.getElementById('secondaryStatus');
+        const difficultyButton = document.getElementById('difficultyButton');
+
+        primaryStatus.textContent = `Primary Button: ${
+          data.primaryButton.pressed ? 'Pressed' : 'Released'
+        }`;
+        primaryStatus.className = `button-status ${
+          data.primaryButton.pressed ? 'pressed' : 'not-pressed'
+        }`;
+
+        secondaryStatus.textContent = `Secondary Button: ${
+          data.secondaryButton.pressed ? 'Pressed' : 'Released'
+        }`;
+        secondaryStatus.className = `button-status ${
+          data.secondaryButton.pressed ? 'pressed' : 'not-pressed'
+        }`;
+
+        // Update difficulty button
+        if (data.isHardMode) {
+          difficultyButton.textContent = 'Hard Mode';
+          difficultyButton.classList.remove('btn-warning');
+          difficultyButton.classList.add('btn-danger');
+        } else {
+          difficultyButton.textContent = 'Normal Mode';
+          difficultyButton.classList.remove('btn-danger');
+          difficultyButton.classList.add('btn-warning');
         }
 
-        function updateUI(data) {
-            // Update button states
-            const primaryStatus = document.getElementById('primaryStatus');
-            const secondaryStatus = document.getElementById('secondaryStatus');
-            
-            primaryStatus.textContent = `Primary Button: ${data.primaryButton.pressed ? 'Pressed' : 'Released'}`;
-            primaryStatus.className = `button-status ${data.primaryButton.pressed ? 'pressed' : 'not-pressed'}`;
-            
-            secondaryStatus.textContent = `Secondary Button: ${data.secondaryButton.pressed ? 'Pressed' : 'Released'}`;
-            secondaryStatus.className = `button-status ${data.secondaryButton.pressed ? 'pressed' : 'not-pressed'}`;
+        // Update shield status
+        const shieldStatus = document.getElementById('shieldStatus');
+        const currentConfig = stateConfig[data.currentState];
 
-            // Update shield status
-            const shieldStatus = document.getElementById('shieldStatus');
-            const currentConfig = stateConfig[data.currentState];
-            
-            if (currentConfig) {
-                shieldStatus.textContent = currentConfig.text;
-                shieldStatus.className = currentConfig.className;
-                
-                // Handle countdown visibility and updates
-                const countdownElement = document.getElementById('countdown');
-                if (data.currentState === ShieldState.BROKEN) {
-                    countdownElement.classList.add('visible');
-                    if (!countdownTimer) {
-                        const startTime = Date.now();
-                        updateCountdown(startTime);
-                        countdownTimer = setInterval(() => updateCountdown(startTime), 1000);
-                    }
-                } else {
-                    countdownElement.classList.remove('visible');
-                    if (countdownTimer) {
-                        clearInterval(countdownTimer);
-                        countdownTimer = null;
-                    }
-                }
+        if (currentConfig) {
+          shieldStatus.textContent = currentConfig.text;
+          shieldStatus.className = currentConfig.className;
+
+          // Handle countdown visibility and updates
+          const countdownElement = document.getElementById('countdown');
+          if (data.currentState === ShieldState.BROKEN) {
+            countdownElement.classList.add('visible');
+            if (!countdownTimer) {
+              const startTime = Date.now();
+              updateCountdown(startTime);
+              countdownTimer = setInterval(
+                () => updateCountdown(startTime),
+                1000,
+              );
             }
+          } else {
+            countdownElement.classList.remove('visible');
+            if (countdownTimer) {
+              clearInterval(countdownTimer);
+              countdownTimer = null;
+            }
+          }
         }
+      }
 
-        function updateCountdown(startTime) {
-            const now = Date.now();
-            const elapsed = now - startTime;
-            const remainingBeforeRegen = REGEN_START_TIME - elapsed;
-            
-            if (remainingBeforeRegen <= 0) {
-                document.getElementById('countdown').classList.remove('visible');
-                if (countdownTimer) {
-                    clearInterval(countdownTimer);
-                    countdownTimer = null;
-                }
-                return;
+      function updateCountdown(startTime) {
+        const now = Date.now();
+        const elapsed = now - startTime;
+        const remainingBeforeRegen = REGEN_START_TIME - elapsed;
+
+        if (remainingBeforeRegen <= 0) {
+          document.getElementById('countdown').classList.remove('visible');
+          if (countdownTimer) {
+            clearInterval(countdownTimer);
+            countdownTimer = null;
+          }
+          return;
+        } else {
+          const seconds = Math.ceil(remainingBeforeRegen / 1000);
+          const formattedTime = `${seconds} seconds`;
+          document.getElementById('countdownTime').textContent = formattedTime;
+        }
+      }
+
+      function addStatusMessage(message, isError = false) {
+        const statusDiv = document.getElementById('statusMessages');
+        const messageElement = document.createElement('div');
+        messageElement.className = `alert ${
+          isError ? 'alert-danger' : 'alert-info'
+        } mt-2`;
+        messageElement.textContent = `${new Date().toLocaleTimeString()}: ${message}`;
+        statusDiv.insertBefore(messageElement, statusDiv.firstChild);
+
+        // Keep only the last 5 messages
+        while (statusDiv.children.length > 5) {
+          statusDiv.removeChild(statusDiv.lastChild);
+        }
+      }
+
+      document
+        .getElementById('triggerButton')
+        .addEventListener('click', async () => {
+          try {
+            const button = document.getElementById('triggerButton');
+            button.disabled = true;
+            addStatusMessage('Shield break triggered');
+
+            const response = await fetch('/api/trigger', { method: 'POST' });
+            const data = await response.json();
+
+            if (!data.success) {
+              addStatusMessage(
+                data.error || 'Failed to trigger shield break',
+                true,
+              );
+            }
+          } catch (error) {
+            console.error('Error triggering shield break:', error);
+            addStatusMessage('Error triggering shield break', true);
+          } finally {
+            setTimeout(() => {
+              document.getElementById('triggerButton').disabled = false;
+            }, 2000);
+          }
+        });
+
+      document
+        .getElementById('resetButton')
+        .addEventListener('click', async () => {
+          try {
+            const button = document.getElementById('resetButton');
+            button.disabled = true;
+
+            const response = await fetch('/api/reset', { method: 'POST' });
+            const data = await response.json();
+
+            if (data.success) {
+              addStatusMessage('System reset successful');
             } else {
-                const seconds = Math.ceil(remainingBeforeRegen / 1000);
-                const formattedTime = `${seconds} seconds`;
-                document.getElementById('countdownTime').textContent = formattedTime;
+              addStatusMessage(data.error || 'Failed to reset system', true);
             }
-        }
-
-        function addStatusMessage(message, isError = false) {
-            const statusDiv = document.getElementById('statusMessages');
-            const messageElement = document.createElement('div');
-            messageElement.className = `alert ${isError ? 'alert-danger' : 'alert-info'} mt-2`;
-            messageElement.textContent = `${new Date().toLocaleTimeString()}: ${message}`;
-            statusDiv.insertBefore(messageElement, statusDiv.firstChild);
-
-            // Keep only the last 5 messages
-            while (statusDiv.children.length > 5) {
-                statusDiv.removeChild(statusDiv.lastChild);
-            }
-        }
-
-        document.getElementById('triggerButton').addEventListener('click', async () => {
-            try {
-                const button = document.getElementById('triggerButton');
-                button.disabled = true;
-                addStatusMessage('Shield break triggered');
-                
-                const response = await fetch('/api/trigger', { method: 'POST' });
-                const data = await response.json();
-                
-                if (!data.success) {
-                    addStatusMessage(data.error || 'Failed to trigger shield break', true);
-                }
-            } catch (error) {
-                console.error('Error triggering shield break:', error);
-                addStatusMessage('Error triggering shield break', true);
-            } finally {
-                setTimeout(() => {
-                    document.getElementById('triggerButton').disabled = false;
-                }, 2000);
-            }
+          } catch (error) {
+            console.error('Error resetting system:', error);
+            addStatusMessage('Error resetting system', true);
+          } finally {
+            setTimeout(() => {
+              document.getElementById('resetButton').disabled = false;
+            }, 2000);
+          }
         });
 
-        document.getElementById('resetButton').addEventListener('click', async () => {
-            try {
-                const button = document.getElementById('resetButton');
-                button.disabled = true;
-                
-                const response = await fetch('/api/reset', { method: 'POST' });
-                const data = await response.json();
-                
-                if (data.success) {
-                    addStatusMessage('System reset successful');
-                } else {
-                    addStatusMessage(data.error || 'Failed to reset system', true);
-                }
-            } catch (error) {
-                console.error('Error resetting system:', error);
-                addStatusMessage('Error resetting system', true);
-            } finally {
-                setTimeout(() => {
-                    document.getElementById('resetButton').disabled = false;
-                }, 2000);
+      document
+        .getElementById('bossDeathButton')
+        .addEventListener('click', async () => {
+          try {
+            const button = document.getElementById('bossDeathButton');
+            button.disabled = true;
+            addStatusMessage('Boss death sequence initiated');
+
+            const response = await fetch('/api/boss-death', { method: 'POST' });
+            const data = await response.json();
+
+            if (data.success) {
+              addStatusMessage('Boss death sequence completed');
+            } else {
+              addStatusMessage(
+                data.error || 'Failed to execute boss death sequence',
+                true,
+              );
             }
+          } catch (error) {
+            console.error('Error in boss death sequence:', error);
+            addStatusMessage('Error in boss death sequence', true);
+          } finally {
+            setTimeout(() => {
+              document.getElementById('bossDeathButton').disabled = false;
+            }, 2000);
+          }
         });
 
-        document.getElementById('bossDeathButton').addEventListener('click', async () => {
-            try {
-                const button = document.getElementById('bossDeathButton');
-                button.disabled = true;
-                addStatusMessage('Boss death sequence initiated');
-                
-                const response = await fetch('/api/boss-death', { method: 'POST' });
-                const data = await response.json();
-                
-                if (data.success) {
-                    addStatusMessage('Boss death sequence completed');
-                } else {
-                    addStatusMessage(data.error || 'Failed to execute boss death sequence', true);
-                }
-            } catch (error) {
-                console.error('Error in boss death sequence:', error);
-                addStatusMessage('Error in boss death sequence', true);
-            } finally {
-                setTimeout(() => {
-                    document.getElementById('bossDeathButton').disabled = false;
-                }, 2000);
+      document
+        .getElementById('lightsOffButton')
+        .addEventListener('click', async () => {
+          try {
+            const button = document.getElementById('lightsOffButton');
+            button.disabled = true;
+            addStatusMessage('Initiating shield power down');
+
+            const response = await fetch('/api/power-down', { method: 'POST' });
+            const data = await response.json();
+
+            if (data.success) {
+              addStatusMessage('Shield powered down successfully');
+            } else {
+              addStatusMessage(
+                data.error || 'Failed to power down shield',
+                true,
+              );
             }
+          } catch (error) {
+            console.error('Error powering down shield:', error);
+            addStatusMessage('Error powering down shield', true);
+          } finally {
+            setTimeout(() => {
+              document.getElementById('lightsOffButton').disabled = false;
+            }, 2000);
+          }
         });
 
-        document.getElementById('lightsOffButton').addEventListener('click', async () => {
-            try {
-                const button = document.getElementById('lightsOffButton');
-                button.disabled = true;
-                addStatusMessage('Initiating shield power down');
-                
-                const response = await fetch('/api/power-down', { method: 'POST' });
-                const data = await response.json();
-                
-                if (data.success) {
-                    addStatusMessage('Shield powered down successfully');
-                } else {
-                    addStatusMessage(data.error || 'Failed to power down shield', true);
-                }
-            } catch (error) {
-                console.error('Error powering down shield:', error);
-                addStatusMessage('Error powering down shield', true);
-            } finally {
-                setTimeout(() => {
-                    document.getElementById('lightsOffButton').disabled = false;
-                }, 2000);
-            }
-        });
+      // Initialize WebSocket connection
+      connectWebSocket();
 
-        // Initialize WebSocket connection
-        connectWebSocket();
+      // Add difficulty toggle handler
+      document
+        .getElementById('difficultyButton')
+        .addEventListener('click', () => {
+          if (ws && ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({ type: 'toggleDifficulty' }));
+            addStatusMessage('Toggling difficulty mode');
+          } else {
+            addStatusMessage(
+              'Cannot toggle difficulty - not connected to server',
+              true,
+            );
+          }
+        });
     </script>
-</body>
-</html> 
+  </body>
+</html>

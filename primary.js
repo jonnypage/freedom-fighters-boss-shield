@@ -15,12 +15,15 @@ const AUDIO_VARIATIONS = {
   'shield-broken': 5, // Number of variations for shield-broken
   'shield-regenerating': 5, // Number of variations for regenerating
   'shield-active': 5, // Number of variations for shield active
+  'hard-shield-break': 1, // Hard mode break sound
+  'hard-shield-regenerate': 1, // Hard mode regenerate sound
 };
 
 let primaryButtonStates = []; // Array to track each keyboard's button state
 let secondaryButtonState = { pressed: false, pressTime: null };
 let state = {
   shieldState: ShieldState.ACTIVE,
+  isHardMode: false, // New state for difficulty mode
 };
 let inputs = [];
 let keyboards = [];
@@ -550,33 +553,53 @@ async function pulseShield(intensity) {
 }
 
 // Function to play audio file
-function playAudio(filename) {
+function playAudio(filename, ignoreVariations = false) {
   // Get the base name without number and extension
   const baseName = filename.replace('.mp3', '');
 
+  // Check if we're in hard mode and have a corresponding hard mode sound
+  if (state.isHardMode) {
+    if (baseName === 'shield-broken') {
+      return playAudioFile(`${AUDIO_PATH}hard-shield-break.mp3`);
+    } else if (baseName === 'shield-regenerating') {
+      return playAudioFile(`${AUDIO_PATH}hard-shield-regenerate.mp3`);
+    }
+  }
+
   // Get random variation number (1 to max variations)
-  const variations = AUDIO_VARIATIONS[baseName] || 1;
+  const variations = ignoreVariations ? 1 : AUDIO_VARIATIONS[baseName] || 1;
   const variation = Math.floor(Math.random() * variations) + 1;
 
   // Construct final filename with variation
-  const finalFile = `${AUDIO_PATH}${baseName}-${variation}.mp3`;
+  const finalFile = ignoreVariations
+    ? `${AUDIO_PATH}${baseName}.mp3`
+    : `${AUDIO_PATH}${baseName}-${variation}.mp3`;
 
+  return playAudioFile(finalFile);
+}
+
+// Separate function to handle the actual audio playing
+function playAudioFile(finalFile) {
   if (fs.existsSync(finalFile)) {
     console.log(`Attempting to play audio: ${finalFile}`);
-    player.play(
-      finalFile,
-      {
-        player: 'mpg123',
-        mpg123: ['-q'], // Quiet mode, no status output
-      },
-      (err) => {
-        if (err) {
-          console.error(`Error playing audio ${finalFile}:`, err);
-        }
-      },
-    );
+    return new Promise((resolve) => {
+      player.play(
+        finalFile,
+        {
+          player: 'mpg123',
+          mpg123: ['-q'], // Quiet mode, no status output
+        },
+        (err) => {
+          if (err) {
+            console.error(`Error playing audio ${finalFile}:`, err);
+          }
+          resolve();
+        },
+      );
+    });
   } else {
     console.error(`Audio file not found: ${finalFile}`);
+    return Promise.resolve();
   }
 }
 
@@ -595,7 +618,7 @@ async function triggerLights() {
   console.log('Buttons were pressed simultaneously - shattering shield');
 
   // Play shield broken sound at the start of shattering
-  playAudio('shield-broken.mp3');
+  const shieldBrokenAudio = playAudio('shield-broken.mp3');
 
   try {
     // Shield shattering effect
@@ -677,11 +700,11 @@ async function triggerLights() {
         state.shieldState = ShieldState.REGENERATING;
         webInterface.broadcastState(); // Broadcast regenerating state
 
-        // Play regeneration sound
-        playAudio('shield-regenerating.mp3');
+        // Calculate timing for hard mode audio
+        const REGEN_DURATION = SHIELD_DOWN_TIME - REGEN_START_TIME;
+        const HARD_MODE_AUDIO_DELAY = REGEN_DURATION - 5000; // Start 5s before completion
 
-        // Start regeneration pulses with exponential timing
-        const PULSE_DURATION = SHIELD_DOWN_TIME - REGEN_START_TIME;
+        // Start regeneration pulses with original timing
         const NUM_PULSES = 12; // Increased for smoother color transition
 
         // Calculate exponential intervals
@@ -692,14 +715,29 @@ async function triggerLights() {
         for (let i = 0; i < NUM_PULSES; i++) {
           // Exponentially decreasing intervals
           const interval =
-            (PULSE_DURATION * Math.exp((-i * decayFactor) / NUM_PULSES)) /
+            (REGEN_DURATION * Math.exp((-i * decayFactor) / NUM_PULSES)) /
             NUM_PULSES;
           intervals.push(interval);
           totalTime += interval;
         }
 
-        // Normalize intervals to fit within PULSE_DURATION
-        const scaleFactor = PULSE_DURATION / totalTime;
+        // Normalize intervals to fit within REGEN_DURATION
+        const scaleFactor = REGEN_DURATION / totalTime;
+
+        // If in hard mode, schedule the audio to play 5s before completion
+        let regenAudio;
+        if (state.isHardMode) {
+          setTimeout(() => {
+            if (state.shieldState === ShieldState.REGENERATING) {
+              regenAudio = playAudio('shield-regenerating.mp3');
+            }
+          }, HARD_MODE_AUDIO_DELAY);
+        } else {
+          // Normal mode - play audio at start
+          regenAudio = playAudio('shield-regenerating.mp3');
+        }
+
+        // Execute the light pattern
         for (
           let i = 0;
           i < NUM_PULSES && state.shieldState === ShieldState.REGENERATING;
@@ -727,20 +765,22 @@ async function triggerLights() {
           await new Promise((resolve) => setTimeout(resolve, 500));
         }
 
+        // If in hard mode, ensure the audio has finished
+        if (state.isHardMode && regenAudio) {
+          await regenAudio;
+        }
+
         // Restore shield to full power (preset 1)
         if (state.shieldState === ShieldState.REGENERATING) {
           // Reset state to active
           state.shieldState = ShieldState.ACTIVE;
           webInterface.broadcastState(); // Broadcast active state
 
-          // Small delay for UI update
-          await new Promise((resolve) => setTimeout(resolve, 100));
-
-          // Then restore shield
+          // Then restore shield and play active sound
           await controlWLED(true, { preset: 1 });
-
-          // Play shield active sound
-          playAudio('shield-active.mp3');
+          if (!state.isHardMode) {
+            playAudio('shield-active.mp3');
+          }
 
           // Reset button states
           resetAllButtonStates();
